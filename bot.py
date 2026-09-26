@@ -1,8 +1,10 @@
 import os
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
+
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+
 
 TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
@@ -50,13 +52,20 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def main():
+    print("MAIN BOSHLANDI", flush=True)
+
     if not TOKEN:
+        print("XATO: BOT_TOKEN TOPILMADI!", flush=True)
         raise RuntimeError("BOT_TOKEN topilmadi!")
+
+    print("TOKEN TOPILDI", flush=True)
 
     threading.Thread(
         target=web_server,
         daemon=True
     ).start()
+
+    print("WEB SERVER ISHLADI", flush=True)
 
     app = Application.builder().token(TOKEN).build()
 
@@ -66,12 +75,11 @@ def main():
     app.add_handler(CommandHandler("players", players))
     app.add_handler(CommandHandler("startgame", startgame))
 
-    print("BOT ISHLADI")
-    print("PORT:", PORT)
+    print("BOT ISHLADI", flush=True)
+    print("TELEGRAM POLLING BOSHLANDI", flush=True)
 
     app.run_polling()
 
 
 if __name__ == "__main__":
     main()
-    
