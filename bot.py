@@ -423,4 +423,4 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-    if amount <= 
+    if amount <= 0:
