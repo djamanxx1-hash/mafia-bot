@@ -10,8 +10,6 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 OWNER_ID = os.getenv("OWNER_ID")
 
-
-# O'yinchilar
 players = {}
 
 
@@ -57,9 +55,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-
-    if user_id != OWNER_ID:
+    if str(update.effective_user.id) != OWNER_ID:
         await update.message.reply_text(
             "⛔ Sizda admin huquqi yo'q."
         )
@@ -67,9 +63,10 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "👑 OWNER PANEL\n\n"
-        "Siz bot egasisiz.\n\n"
         "💎 /adddiamonds ID MIQDOR\n"
-        "💰 /addbalance ID MIQDOR"
+        "💰 /addbalance ID MIQDOR\n"
+        "💎 /bankrot1 ID - almazni 0 qilish\n"
+        "💰 /bankrot2 ID - money'ni 0 qilish"
     )
 
 
@@ -99,9 +96,7 @@ async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-
-    if user_id != OWNER_ID:
+    if str(update.effective_user.id) != OWNER_ID:
         await update.message.reply_text(
             "⛔ Bu buyruq faqat OWNER uchun."
         )
@@ -109,10 +104,7 @@ async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) != 2:
         await update.message.reply_text(
-            "❌ Format:\n"
-            "/adddiamonds ID MIQDOR\n\n"
-            "Masalan:\n"
-            "/adddiamonds 123456789 1000"
+            "❌ Format:\n/adddiamonds ID MIQDOR"
         )
         return
 
@@ -121,7 +113,7 @@ async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = int(context.args[1])
     except ValueError:
         await update.message.reply_text(
-            "❌ ID va miqdor faqat raqam bo'lishi kerak."
+            "❌ ID va miqdor raqam bo'lishi kerak."
         )
         return
 
@@ -150,9 +142,7 @@ async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = str(update.effective_user.id)
-
-    if user_id != OWNER_ID:
+    if str(update.effective_user.id) != OWNER_ID:
         await update.message.reply_text(
             "⛔ Bu buyruq faqat OWNER uchun."
         )
@@ -160,10 +150,7 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(context.args) != 2:
         await update.message.reply_text(
-            "❌ Format:\n"
-            "/addbalance ID MIQDOR\n\n"
-            "Masalan:\n"
-            "/addbalance 123456789 5000"
+            "❌ Format:\n/addbalance ID MIQDOR"
         )
         return
 
@@ -172,7 +159,7 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = int(context.args[1])
     except ValueError:
         await update.message.reply_text(
-            "❌ ID va miqdor faqat raqam bo'lishi kerak."
+            "❌ ID va miqdor raqam bo'lishi kerak."
         )
         return
 
@@ -197,6 +184,78 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 ID: {target_id}\n"
         f"💰 Qo'shildi: {amount}\n"
         f"💰 Jami: {players[target_id]['balance']}"
+    )
+
+
+async def bankrupt1(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != OWNER_ID:
+        await update.message.reply_text(
+            "⛔ Bu buyruq faqat OWNER uchun."
+        )
+        return
+
+    if len(context.args) != 1:
+        await update.message.reply_text(
+            "❌ Format:\n/bankrot1 ID"
+        )
+        return
+
+    try:
+        target_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID raqam bo'lishi kerak."
+        )
+        return
+
+    if target_id not in players:
+        await update.message.reply_text(
+            "❌ Bu ID bilan o'yinchi topilmadi."
+        )
+        return
+
+    players[target_id]["diamonds"] = 0
+
+    await update.message.reply_text(
+        f"💎 BANKROT 1\n\n"
+        f"👤 ID: {target_id}\n"
+        f"💎 Almaz: 0"
+    )
+
+
+async def bankrupt2(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if str(update.effective_user.id) != OWNER_ID:
+        await update.message.reply_text(
+            "⛔ Bu buyruq faqat OWNER uchun."
+        )
+        return
+
+    if len(context.args) != 1:
+        await update.message.reply_text(
+            "❌ Format:\n/bankrot2 ID"
+        )
+        return
+
+    try:
+        target_id = int(context.args[0])
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID raqam bo'lishi kerak."
+        )
+        return
+
+    if target_id not in players:
+        await update.message.reply_text(
+            "❌ Bu ID bilan o'yinchi topilmadi."
+        )
+        return
+
+    players[target_id]["balance"] = 0
+
+    await update.message.reply_text(
+        f"💰 BANKROT 2\n\n"
+        f"👤 ID: {target_id}\n"
+        f"💰 Balans: 0"
     )
 
 
@@ -272,6 +331,8 @@ def main():
     app.add_handler(CommandHandler("balance", balance))
     app.add_handler(CommandHandler("adddiamonds", adddiamonds))
     app.add_handler(CommandHandler("addbalance", addbalance))
+    app.add_handler(CommandHandler("bankrot1", bankrupt1))
+    app.add_handler(CommandHandler("bankrot2", bankrupt2))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("players", players_command))
