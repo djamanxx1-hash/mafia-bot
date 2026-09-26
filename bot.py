@@ -5,7 +5,11 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
-class HealthHandler(BaseHTTPRequestHandler): def do_GET(self): self.send_response(200) self.end_headers() self.wfile.write(b"OK")
+class HealthHandler(BaseHTTPRequestHandler):
+     def do_GET(self):
+         self.send_response(200)
+         self.end_headers()
+         self.wfile.write(b"OK")
 def log_message(self, format, *args):
     pass
 def log_message(self, format, *args):
