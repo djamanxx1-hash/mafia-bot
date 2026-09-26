@@ -39,6 +39,7 @@ def get_player(user):
             "games": 0
         }
 
+    players[user.id]["name"] = user.full_name
     return players[user.id]
 
 
@@ -50,6 +51,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/players - oyinchilar\n"
         "/startgame - oyinni boshlash\n"
         "/profile - profil\n"
+        "/balance - balans\n"
         "/admin - owner panel"
     )
 
@@ -66,7 +68,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "👑 OWNER PANEL\n\n"
         "Siz bot egasisiz.\n\n"
-        "✅ Admin tizimi ishlayapti!"
+        "💎 /adddiamonds ID MIQDOR\n"
+        "💰 /addbalance ID MIQDOR"
     )
 
 
@@ -81,6 +84,119 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💎 Almaz: {player['diamonds']}\n"
         f"💰 Balans: {player['balance']}\n"
         f"🎮 O'yinlar: {player['games']}"
+    )
+
+
+async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    player = get_player(user)
+
+    await update.message.reply_text(
+        f"💰 BALANS\n\n"
+        f"💎 Almaz: {player['diamonds']}\n"
+        f"💰 Balans: {player['balance']}"
+    )
+
+
+async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+
+    if user_id != OWNER_ID:
+        await update.message.reply_text(
+            "⛔ Bu buyruq faqat OWNER uchun."
+        )
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text(
+            "❌ Format:\n"
+            "/adddiamonds ID MIQDOR\n\n"
+            "Masalan:\n"
+            "/adddiamonds 123456789 1000"
+        )
+        return
+
+    try:
+        target_id = int(context.args[0])
+        amount = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID va miqdor faqat raqam bo'lishi kerak."
+        )
+        return
+
+    if amount <= 0:
+        await update.message.reply_text(
+            "❌ Miqdor 0 dan katta bo'lishi kerak."
+        )
+        return
+
+    if target_id not in players:
+        players[target_id] = {
+            "name": f"ID {target_id}",
+            "diamonds": 0,
+            "balance": 0,
+            "games": 0
+        }
+
+    players[target_id]["diamonds"] += amount
+
+    await update.message.reply_text(
+        f"✅ Almaz berildi!\n\n"
+        f"👤 ID: {target_id}\n"
+        f"💎 Qo'shildi: {amount}\n"
+        f"💎 Jami: {players[target_id]['diamonds']}"
+    )
+
+
+async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+
+    if user_id != OWNER_ID:
+        await update.message.reply_text(
+            "⛔ Bu buyruq faqat OWNER uchun."
+        )
+        return
+
+    if len(context.args) != 2:
+        await update.message.reply_text(
+            "❌ Format:\n"
+            "/addbalance ID MIQDOR\n\n"
+            "Masalan:\n"
+            "/addbalance 123456789 5000"
+        )
+        return
+
+    try:
+        target_id = int(context.args[0])
+        amount = int(context.args[1])
+    except ValueError:
+        await update.message.reply_text(
+            "❌ ID va miqdor faqat raqam bo'lishi kerak."
+        )
+        return
+
+    if amount <= 0:
+        await update.message.reply_text(
+            "❌ Miqdor 0 dan katta bo'lishi kerak."
+        )
+        return
+
+    if target_id not in players:
+        players[target_id] = {
+            "name": f"ID {target_id}",
+            "diamonds": 0,
+            "balance": 0,
+            "games": 0
+        }
+
+    players[target_id]["balance"] += amount
+
+    await update.message.reply_text(
+        f"✅ Balans to'ldirildi!\n\n"
+        f"👤 ID: {target_id}\n"
+        f"💰 Qo'shildi: {amount}\n"
+        f"💰 Jami: {players[target_id]['balance']}"
     )
 
 
@@ -135,11 +251,9 @@ def main():
     print("MAIN BOSHLANDI", flush=True)
 
     if not TOKEN:
-        print("XATO: BOT_TOKEN TOPILMADI!", flush=True)
         raise RuntimeError("BOT_TOKEN topilmadi!")
 
     if not OWNER_ID:
-        print("XATO: OWNER_ID TOPILMADI!", flush=True)
         raise RuntimeError("OWNER_ID topilmadi!")
 
     print("TOKEN TOPILDI", flush=True)
@@ -150,20 +264,20 @@ def main():
         daemon=True
     ).start()
 
-    print("WEB SERVER ISHLADI", flush=True)
-
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("profile", profile))
+    app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("adddiamonds", adddiamonds))
+    app.add_handler(CommandHandler("addbalance", addbalance))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("players", players_command))
     app.add_handler(CommandHandler("startgame", startgame))
 
     print("BOT ISHLADI", flush=True)
-    print("TELEGRAM POLLING BOSHLANDI", flush=True)
 
     app.run_polling()
 
