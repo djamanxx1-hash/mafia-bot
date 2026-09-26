@@ -2,7 +2,7 @@ import os
 import random
 import logging
 
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -58,7 +58,7 @@ ROLES = [
     ("Manyak", "🔪"),
     ("O'g'ri", "🥷"),
     ("Qasoskor", "⚔️"),
-    ("Fuqarо", "👤"),
+    ("Fuqaro", "👤"),
     ("Fuqaro", "👤"),
     ("Fuqaro", "👤"),
     ("Fuqaro", "👤"),
@@ -72,7 +72,7 @@ ROLES = [
 ]
 
 # =========================
-# YORDAMCHI
+# YORDAMCHI FUNKSIYALAR
 # =========================
 
 def is_owner(user_id):
@@ -98,7 +98,24 @@ def get_player(user):
             "banned": False,
         }
 
+    else:
+        players[user_id]["name"] = user.first_name or "Noma'lum"
+        players[user_id]["username"] = user.username or ""
+
     return players[user_id]
+
+
+def create_empty_player(user_id):
+    return {
+        "id": user_id,
+        "name": "O'yinchi",
+        "username": "",
+        "diamonds": 0,
+        "money": 0,
+        "games": 0,
+        "wins": 0,
+        "banned": False,
+    }
 
 
 def player_text(p):
@@ -106,13 +123,33 @@ def player_text(p):
 
     return (
         f"👤 Ism: {p['name']}\n"
-        f"🆔 ID: `{p['id']}`\n"
+        f"🆔 ID: {p['id']}\n"
         f"📱 Username: {username}\n\n"
         f"💎 Olmos: {p['diamonds']}\n"
         f"💰 Pul: {p['money']}\n"
         f"🎮 O'yinlar: {p['games']}\n"
         f"🏆 G'alabalar: {p['wins']}"
     )
+
+
+# =========================
+# MENU
+# =========================
+
+async def setup_menu(application):
+    commands = [
+        BotCommand("start", "Botni ishga tushirish"),
+        BotCommand("profile", "Profilim"),
+        BotCommand("money", "Balansim"),
+        BotCommand("top", "Reyting"),
+        BotCommand("exchange", "Olmosni pulga almashtirish"),
+        BotCommand("newgame", "Yangi o'yin"),
+        BotCommand("join", "O'yinga qo'shilish"),
+        BotCommand("players", "O'yinchilar"),
+        BotCommand("help", "Yordam"),
+    ]
+
+    await application.bot.set_my_commands(commands)
 
 
 # =========================
@@ -130,18 +167,32 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "👑 OVERLORD MAFIA\n\n"
-        "🎭 Sirlar • Intriga • G'alaba\n"
-        "💎 Olmos • 💰 Pul • 🎁 Mukofotlar\n\n"
-        "📌 Asosiy buyruqlar:\n"
-        "/profile — profilingiz\n"
-        "/money — balansingiz\n"
-        "/players — o'yinchilar\n"
-        "/newgame — yangi o'yin\n"
-        "/join — o'yinga qo'shilish\n"
-        "/startgame — o'yinni boshlash\n"
-        "/top — reyting\n\n"
-        "🔥 Har o'yin — yangi hikoya!"
+        "🎭 Xush kelibsiz!\n\n"
+        "📋 Kerakli bo'limni Telegramdagi ☰ Menu orqali tanlang.\n\n"
+        "👤 Profil — profilingizni ko'rish\n"
+        "💰 Balans — pul va olmoslar\n"
+        "🏆 Reyting — TOP o'yinchilar\n"
+        "🎭 O'yin — Mafia o'yiniga qo'shilish\n"
+        "📖 Yordam — buyruqlar va qoidalar"
+    )
+
+
+# =========================
+# HELP
+# =========================
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📖 YORDAM\n\n"
+        "👤 /profile — profilingiz\n"
+        "💰 /money — balans\n"
+        "🏆 /top — reyting\n"
+        "💎 /exchange — olmosni pulga almashtirish\n\n"
+        "🎭 /newgame — yangi o'yin ochish\n"
+        "➕ /join — o'yinga qo'shilish\n"
+        "👥 /players — o'yinchilar\n\n"
+        "📌 Buyruqlarni yozish shart emas.\n"
+        "Telegramdagi ☰ Menu orqali tanlashingiz mumkin."
     )
 
 
@@ -153,11 +204,11 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = get_player(update.effective_user)
 
     if p["banned"]:
+        await update.message.reply_text("🚫 Siz ban qilingansiz.")
         return
 
     await update.message.reply_text(
-        "👤 SIZNING PROFILINGIZ\n\n" + player_text(p),
-        parse_mode="Markdown",
+        "👤 SIZNING PROFILINGIZ\n\n" + player_text(p)
     )
 
 
@@ -167,6 +218,9 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def money(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = get_player(update.effective_user)
+
+    if p["banned"]:
+        return
 
     await update.message.reply_text(
         f"💰 BALANS\n\n"
@@ -190,7 +244,7 @@ async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reverse=True,
     )
 
-    text = "🏆 OVERLORD MAFIA — TOP\n\n"
+    text = "🏆 TOP O'YINCHILAR\n\n"
 
     for i, p in enumerate(sorted_players[:10], start=1):
         text += f"{i}. {p['name']} — 💰 {p['money']}\n"
@@ -205,9 +259,12 @@ async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     p = get_player(update.effective_user)
 
+    if p["banned"]:
+        return
+
     if not context.args:
         await update.message.reply_text(
-            "💎 Almashish:\n\n"
+            "💎 ALMASHISH\n\n"
             "/exchange 100\n\n"
             "100 💎 = 10 000 💰"
         )
@@ -216,7 +273,7 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         amount = int(context.args[0])
     except ValueError:
-        await update.message.reply_text("❌ Raqam kiriting.")
+        await update.message.reply_text("❌ Miqdor raqam bo'lishi kerak.")
         return
 
     if amount <= 0:
@@ -240,7 +297,7 @@ async def exchange(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# ADMIN PANEL
+# ADMIN
 # =========================
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -249,14 +306,14 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "👑 OVERLORD ADMIN PANEL\n\n"
+        "👑 ADMIN PANEL\n\n"
         "👤 /profile ID\n"
         "💎 /adddiamond ID AMOUNT\n"
         "💰 /addmoney ID AMOUNT\n"
         "💎 /removediamond ID AMOUNT\n"
         "💰 /removemoney ID AMOUNT\n"
-        "💎 /bankrot1 ID — olmosni 0 qiladi\n"
-        "💰 /bankrot2 ID — pulni 0 qiladi\n"
+        "💎 /bankrot1 ID\n"
+        "💰 /bankrot2 ID\n"
         "🚫 /ban ID\n"
         "✅ /unban ID\n"
         "➕ /addadmin ID\n"
@@ -265,7 +322,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# ADMIN: ADD DIAMOND
+# ADD DIAMOND
 # =========================
 
 async def adddiamond(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -285,17 +342,12 @@ async def adddiamond(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ ID va miqdor raqam bo'lishi kerak.")
         return
 
+    if amount <= 0:
+        await update.message.reply_text("❌ Miqdor 0 dan katta bo'lishi kerak.")
+        return
+
     if user_id not in players:
-        players[user_id] = {
-            "id": user_id,
-            "name": "O'yinchi",
-            "username": "",
-            "diamonds": 0,
-            "money": 0,
-            "games": 0,
-            "wins": 0,
-            "banned": False,
-        }
+        players[user_id] = create_empty_player(user_id)
 
     players[user_id]["diamonds"] += amount
 
@@ -305,7 +357,7 @@ async def adddiamond(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# ADMIN: ADD MONEY
+# ADD MONEY
 # =========================
 
 async def addmoney(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -325,17 +377,12 @@ async def addmoney(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ ID va miqdor raqam bo'lishi kerak.")
         return
 
+    if amount <= 0:
+        await update.message.reply_text("❌ Miqdor 0 dan katta bo'lishi kerak.")
+        return
+
     if user_id not in players:
-        players[user_id] = {
-            "id": user_id,
-            "name": "O'yinchi",
-            "username": "",
-            "diamonds": 0,
-            "money": 0,
-            "games": 0,
-            "wins": 0,
-            "banned": False,
-        }
+        players[user_id] = create_empty_player(user_id)
 
     players[user_id]["money"] += amount
 
@@ -363,6 +410,10 @@ async def removediamond(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = int(context.args[1])
     except ValueError:
         await update.message.reply_text("❌ Raqam kiriting.")
+        return
+
+    if amount <= 0:
+        await update.message.reply_text("❌ Miqdor noto'g'ri.")
         return
 
     if user_id not in players:
@@ -396,6 +447,10 @@ async def removemoney(update: Update, context: ContextTypes.DEFAULT_TYPE):
         amount = int(context.args[1])
     except ValueError:
         await update.message.reply_text("❌ Raqam kiriting.")
+        return
+
+    if amount <= 0:
+        await update.message.reply_text("❌ Miqdor noto'g'ri.")
         return
 
     if user_id not in players:
@@ -465,7 +520,7 @@ async def bankrot2(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# BAN / UNBAN
+# BAN
 # =========================
 
 async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -486,10 +541,20 @@ async def ban(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ O'yinchi topilmadi.")
         return
 
+    if user_id == OWNER_ID:
+        await update.message.reply_text("❌ Owner'ni ban qilib bo'lmaydi.")
+        return
+
     players[user_id]["banned"] = True
 
-    await update.message.reply_text(f"🚫 {user_id} ban qilindi.")
+    await update.message.reply_text(
+        f"🚫 {user_id} ban qilindi."
+    )
 
+
+# =========================
+# UNBAN
+# =========================
 
 async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_admin(update.effective_user.id):
@@ -511,7 +576,9 @@ async def unban(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     players[user_id]["banned"] = False
 
-    await update.message.reply_text(f"✅ {user_id} unban qilindi.")
+    await update.message.reply_text(
+        f"✅ {user_id} unban qilindi."
+    )
 
 
 # =========================
@@ -530,6 +597,10 @@ async def addadmin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = int(context.args[0])
     except ValueError:
         await update.message.reply_text("❌ ID noto'g'ri.")
+        return
+
+    if user_id == OWNER_ID:
+        await update.message.reply_text("ℹ️ Siz allaqachon owner hisoblanasiz.")
         return
 
     admins.add(user_id)
@@ -582,9 +653,9 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     game_started = False
 
     await update.message.reply_text(
-        "🎭 YANGI MAFIA O'YINI OCHILDI!\n\n"
-        "👥 O'yinga qo'shilish uchun:\n"
-        "/join\n\n"
+        "🎭 YANGI O'YIN OCHILDI!\n\n"
+        "👥 O'yinga qo'shilish uchun ☰ Menu → O'yinga qo'shilish "
+        "yoki /join buyrug'ini bosing.\n\n"
         f"👤 Minimal: {MIN_PLAYERS} o'yinchi\n"
         f"👥 Maksimal: {MAX_PLAYERS} o'yinchi\n\n"
         "🔥 O'yin boshlanishini kuting..."
@@ -677,8 +748,8 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if len(game_players) < MIN_PLAYERS:
         await update.message.reply_text(
-            f"❌ O'yinni boshlash uchun kamida "
-            f"{MIN_PLAYERS} ta o'yinchi kerak.\n\n"
+            f"❌ O'yinni boshlash uchun kamida {MIN_PLAYERS} ta "
+            f"o'yinchi kerak.\n\n"
             f"👥 Hozir: {len(game_players)}"
         )
         return
@@ -708,15 +779,29 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "⚠️ ROLINGIZNI boshqa o'yinchilarga aytmang!"
                 ),
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logging.error(
+                "Rolni yuborishda xato: %s",
+                e,
+            )
 
     await update.message.reply_text(
-        "🔥 MAFIA O'YINI BOSHLANDI!\n\n"
+        "🔥 O'YIN BOSHLANDI!\n\n"
         f"👥 O'yinchilar: {len(player_list)}\n\n"
         "🎭 Rollar barcha o'yinchilarga maxfiy yuborildi.\n"
         "🌙 Tun boshlandi...\n\n"
-        "🤫 O'yin davomida hushyor bo'ling!"
+        "🤫 Hushyor bo'ling!"
+    )
+
+
+# =========================
+# ERROR HANDLER
+# =========================
+
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
+    logging.error(
+        "Botda xato yuz berdi:",
+        exc_info=context.error,
     )
 
 
@@ -726,19 +811,37 @@ async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def main():
     if not TOKEN:
-        raise ValueError("BOT_TOKEN topilmadi.")
+        raise ValueError(
+            "BOT_TOKEN topilmadi. Render Environment'da BOT_TOKEN yarating."
+        )
 
     if OWNER_ID == 0:
-        raise ValueError("OWNER_ID topilmadi.")
+        raise ValueError(
+            "OWNER_ID topilmadi. Render Environment'da OWNER_ID yarating."
+        )
 
-    application = Application.builder().token(TOKEN).build()
+    application = (
+        Application.builder()
+        .token(TOKEN)
+        .post_init(setup_menu)
+        .build()
+    )
 
+    # Oddiy menyu
     application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("profile", profile))
     application.add_handler(CommandHandler("money", money))
     application.add_handler(CommandHandler("top", top))
     application.add_handler(CommandHandler("exchange", exchange))
 
+    # O'yin
+    application.add_handler(CommandHandler("newgame", newgame))
+    application.add_handler(CommandHandler("join", join))
+    application.add_handler(CommandHandler("players", players_command))
+    application.add_handler(CommandHandler("startgame", startgame))
+
+    # Admin
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CommandHandler("adddiamond", adddiamond))
     application.add_handler(CommandHandler("addmoney", addmoney))
@@ -751,12 +854,10 @@ def main():
     application.add_handler(CommandHandler("addadmin", addadmin))
     application.add_handler(CommandHandler("removeadmin", removeadmin))
 
-    application.add_handler(CommandHandler("newgame", newgame))
-    application.add_handler(CommandHandler("join", join))
-    application.add_handler(CommandHandler("players", players_command))
-    application.add_handler(CommandHandler("startgame", startgame))
+    # Xatolarni ushlash
+    application.add_error_handler(error_handler)
 
-    print("🤖 OVERLORD MAFIA BOT IS RUNNING...")
+    print("BOT IS RUNNING...")
 
     application.run_polling()
 
