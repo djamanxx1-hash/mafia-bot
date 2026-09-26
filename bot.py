@@ -129,4 +129,14 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if str(update.effective_user.id) != OWNER_ID:
         await update.message.reply_text(
-            "⛔ Siz
+            "Sizda admin huquqi yo'q."
+        )
+        return
+
+    await update.message.reply_text(
+        "OWNER PANEL\n\n"
+        "/adddiamonds ID MIQDOR\n"
+        "/addbalance ID MIQDOR\n"
+        "/bankrot1 ID\n"
+        "/bankrot2 ID"
+    )
