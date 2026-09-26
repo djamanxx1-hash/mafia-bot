@@ -423,10 +423,8 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         return
 
-        if amount <= 0:
+            if amount <= 0:
         await update.message.reply_text(
             "❌ Miqdor 0 dan katta bo'lishi kerak."
         )
         return
-
-    if target_id not in players:
