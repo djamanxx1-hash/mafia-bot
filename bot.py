@@ -12,7 +12,7 @@ OWNER_ID = os.getenv("OWNER_ID")
 
 
 # O'yinchilar
-players_list = []
+players = {}
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -30,6 +30,18 @@ def web_server():
     server.serve_forever()
 
 
+def get_player(user):
+    if user.id not in players:
+        players[user.id] = {
+            "name": user.full_name,
+            "diamonds": 0,
+            "balance": 0,
+            "games": 0
+        }
+
+    return players[user.id]
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🕵️ Mafia bot ishlayapti!\n\n"
@@ -37,6 +49,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/join - oyinga qoshilish\n"
         "/players - oyinchilar\n"
         "/startgame - oyinni boshlash\n"
+        "/profile - profil\n"
         "/admin - owner panel"
     )
 
@@ -57,9 +70,21 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    players_list.clear()
+async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    player = get_player(user)
 
+    await update.message.reply_text(
+        f"👤 PROFIL\n\n"
+        f"📝 Ism: {player['name']}\n"
+        f"🆔 ID: {user.id}\n\n"
+        f"💎 Almaz: {player['diamonds']}\n"
+        f"💰 Balans: {player['balance']}\n"
+        f"🎮 O'yinlar: {player['games']}"
+    )
+
+
+async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎭 Yangi oyin ochildi!\n\n"
         "Oyinga qoshilish uchun /join bosing."
@@ -68,49 +93,41 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-
-    for player in players_list:
-        if player["id"] == user.id:
-            await update.message.reply_text(
-                "⚠️ Siz allaqachon oyindasiz!"
-            )
-            return
-
-    players_list.append({
-        "id": user.id,
-        "name": user.full_name
-    })
+    get_player(user)
 
     await update.message.reply_text(
         f"✅ {user.full_name}, siz oyinga qoshildingiz!"
     )
 
 
-async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not players_list:
+async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not players:
         await update.message.reply_text(
             "👥 Hozircha oyinchilar royxati bosh."
         )
         return
 
-    text = "👥 O'yinchilar:\n\n"
+    text = "👥 O'YINCHILAR:\n\n"
 
-    for number, player in enumerate(players_list, start=1):
+    for number, player in enumerate(players.values(), start=1):
         text += f"{number}. {player['name']}\n"
 
     await update.message.reply_text(text)
 
 
 async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not players_list:
+    if not players:
         await update.message.reply_text(
             "⚠️ Oyinda hech kim yo'q!"
         )
         return
 
+    for player in players.values():
+        player["games"] += 1
+
     await update.message.reply_text(
         f"🎭 O'yin boshlanishga tayyor!\n\n"
-        f"👥 O'yinchilar soni: {len(players_list)}"
+        f"👥 O'yinchilar soni: {len(players)}"
     )
 
 
@@ -139,9 +156,10 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("admin", admin))
+    app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("join", join))
-    app.add_handler(CommandHandler("players", players))
+    app.add_handler(CommandHandler("players", players_command))
     app.add_handler(CommandHandler("startgame", startgame))
 
     print("BOT ISHLADI", flush=True)
