@@ -3,7 +3,11 @@ import random
 
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
-
+import threading from http.server import BaseHTTPRequestHandler, HTTPServer
+class HealthHandler(BaseHTTPRequestHandler): def do_GET(self): self.send_response(200) self.end_headers() self.wfile.write(b"OK")
+def log_message(self, format, *args):
+    pass
+def run_server(): port = int(os.environ.get("PORT", 10000)) server = HTTPServer(("0.0.0.0", port), HealthHandler) server.serve_forever()
 
 TOKEN = os.getenv("BOT_TOKEN")
 
