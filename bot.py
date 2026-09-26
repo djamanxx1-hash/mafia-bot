@@ -1,37 +1,34 @@
+
 import os
 import random
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
-
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
-
-
-class HealthHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"OK")
-
-    def log_message(self, format, *args):
-        pass
-
-
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(("0.0.0.0", port), HealthHandler)
-    server.serve_forever()
-
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
 games = {}
 
 
+def get_game(chat_id):
+    if chat_id not in games:
+        games[chat_id] = {
+            "players": [],
+            "roles": {},
+            "alive": [],
+            "started": False,
+            "phase": "waiting",
+        }
+    return games[chat_id]
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🕵️ Mafia botga xush kelibsiz!\n\n"
-        "O'yinni boshlash uchun:\n"
+        "🎭 O'yinni boshlash uchun:\n"
         "/newgame — yangi o'yin\n"
         "/join — o'yinga qo'shilish\n"
         "/players — o'yinchilarni ko'rish\n"
@@ -43,111 +40,146 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
 
     games[chat_id] = {
-        "players": {},
-        "started": False
+        "players": [],
+        "roles": {},
+        "alive": [],
+        "started": False,
+        "phase": "waiting",
     }
 
     await update.message.reply_text(
-        "🎭 Yangi Mafia o'yini yaratildi!\n\n"
-        "Qo'shilish uchun /join ni bosing."
+        "🎭 Yangi Mafia o'yini ochildi!\n\n"
+        "O'yinga kirish uchun /join bosing.\n"
+        "👥 O'yinchilar: /players"
     )
 
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    game = get_game(chat_id)
+
+    if game["started"]:
+        await update.message.reply_text("❌ O'yin allaqachon boshlangan!")
+        return
+
     user = update.effective_user
 
-    if chat_id not in games:
-        await update.message.reply_text(
-            "❌ Avval /newgame buyrug'i bilan o'yin yarating."
-        )
+    if any(p["id"] == user.id for p in game["players"]):
+        await update.message.reply_text("⚠️ Siz allaqachon o'yindasiz!")
         return
 
-    if games[chat_id]["started"]:
-        await update.message.reply_text(
-            "❌ O'yin allaqachon boshlangan."
-        )
-        return
-
-    games[chat_id]["players"][user.id] = user.first_name
+    game["players"].append({
+        "id": user.id,
+        "name": user.first_name,
+    })
 
     await update.message.reply_text(
-        f"✅ {user.first_name} o'yinga qo'shildi!"
+        f"✅ {user.first_name} o'yinga qo'shildi!\n"
+        f"👥 Jami o'yinchilar: {len(game['players'])}"
     )
 
 
 async def players(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    game = get_game(chat_id)
 
-    if chat_id not in games:
-        await update.message.reply_text(
-            "❌ Hozircha o'yin yo'q."
-        )
-        return
-
-    player_list = games[chat_id]["players"]
-
-    if not player_list:
-        await update.message.reply_text(
-            "👥 Hozircha hech kim qo'shilmagan."
-        )
+    if not game["players"]:
+        await update.message.reply_text("👥 Hozircha o'yinchilar yo'q.")
         return
 
     text = "👥 O'yinchilar:\n\n"
 
-    for number, name in enumerate(player_list.values(), 1):
-        text += f"{number}. {name}\n"
+    for i, player in enumerate(game["players"], 1):
+        text += f"{i}. {player['name']}\n"
 
     await update.message.reply_text(text)
 
 
 async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
+    game = get_game(chat_id)
 
-    if chat_id not in games:
+    if game["started"]:
+        await update.message.reply_text("❌ O'yin allaqachon boshlangan!")
+        return
+
+    count = len(game["players"])
+
+    if count < 4:
         await update.message.reply_text(
-            "❌ Avval /newgame buyrug'ini bosing."
+            "❌ O'yinni boshlash uchun kamida 4 ta o'yinchi kerak!"
         )
         return
 
-    player_ids = list(games[chat_id]["players"].keys())
+    # Rollar
+    roles = []
 
-    if len(player_ids) < 4:
-        await update.message.reply_text(
-            "❌ O'yinni boshlash uchun kamida 4 ta o'yinchi kerak."
-        )
-        return
+    mafia_count = max(1, count // 4)
 
-    roles = ["Mafia"]
+    roles += ["🔪 Mafia"] * mafia_count
+    roles += ["👨‍⚕️ Doktor"]
+    roles += ["🕵️ Komissar"]
 
-    while len(roles) < len(player_ids):
-        roles.append("Tinch aholi")
+    while len(roles) < count:
+        roles.append("👨‍🌾 Fuqaro")
 
     random.shuffle(roles)
 
-    games[chat_id]["started"] = True
+    game["roles"] = {}
 
-    for user_id, role in zip(player_ids, roles):
+    for player, role in zip(game["players"], roles):
+        game["roles"][player["id"]] = role
+
+    game["alive"] = [player["id"] for player in game["players"]]
+    game["started"] = True
+    game["phase"] = "night"
+
+    await update.message.reply_text(
+        "🎭 MAFIA O'YINI BOSHLANDI!\n\n"
+        "🌙 Kecha boshlandi.\n"
+        "📩 Har bir o'yinchiga o'z roli shaxsiy xabarda yuboriladi."
+    )
+
+    # Rollarni shaxsiy xabarda yuborish
+    for player in game["players"]:
         try:
             await context.bot.send_message(
-                chat_id=user_id,
-                text=f"🎭 Sizning rolingiz: {role}"
+                chat_id=player["id"],
+                text=(
+                    "🎭 SIZNING ROLINGIZ\n\n"
+                    f"{game['roles'][player['id']]}\n\n"
+                    "🤫 Rolingizni hech kimga aytmang!"
+                ),
             )
         except Exception:
             pass
 
+
+async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat_id = update.effective_chat.id
+    game = get_game(chat_id)
+
+    if not game["started"]:
+        await update.message.reply_text("⏳ Hozircha o'yin boshlanmagan.")
+        return
+
+    alive_names = []
+
+    for player in game["players"]:
+        if player["id"] in game["alive"]:
+            alive_names.append(player["name"])
+
     await update.message.reply_text(
-        "🎬 O'yin boshlandi!\n"
-        "Rollar o'yinchilarga shaxsiy xabar orqali yuborildi."
+        f"🎭 O'yin holati\n\n"
+        f"🌙/☀️ Bosqich: {game['phase']}\n"
+        f"❤️ Tiriklar: {len(alive_names)}\n\n"
+        + "\n".join(f"• {name}" for name in alive_names)
     )
 
 
 def main():
     if not TOKEN:
         raise ValueError("BOT_TOKEN topilmadi!")
-
-    # Render uchun portni ochamiz
-    threading.Thread(target=run_server, daemon=True).start()
 
     app = Application.builder().token(TOKEN).build()
 
@@ -156,8 +188,9 @@ def main():
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("players", players))
     app.add_handler(CommandHandler("startgame", startgame))
+    app.add_handler(CommandHandler("status", status))
 
-    print("🤖 Bot ishga tushdi!")
+    print("🤖 Mafia bot ishga tushdi!")
 
     app.run_polling()
 
