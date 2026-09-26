@@ -18,7 +18,177 @@ game_players = {}
 game_started = False
 
 
+# =========================================================
+# 30 TA NOYOB ROL
+# =========================================================
+
+ROLES = [
+    # 🔪 MAFIA
+    {
+        "name": "Don",
+        "team": "Mafia",
+        "description": "Mafiyaning boshlig'i. Mafia qarorlarini boshqaradi."
+    },
+    {
+        "name": "Qotil",
+        "team": "Mafia",
+        "description": "Tunda bitta o'yinchini o'ldirishga urinadi."
+    },
+    {
+        "name": "Zaharchi",
+        "team": "Mafia",
+        "description": "Tunda tanlagan o'yinchisini zaharlaydi. Zahar keyin ta'sir qiladi."
+    },
+    {
+        "name": "Jimjit",
+        "team": "Mafia",
+        "description": "Tanlagan o'yinchisini keyingi kun jim bo'lishiga majbur qiladi."
+    },
+    {
+        "name": "Soya",
+        "team": "Mafia",
+        "description": "Bir kecha Mafia a'zosini yashirib, uni tekshiruvlardan himoya qiladi."
+    },
+    {
+        "name": "Bombachi",
+        "team": "Mafia",
+        "description": "Tanlagan o'yinchisiga yashirin bomba qo'yadi."
+    },
+    {
+        "name": "Mafia Bankiri",
+        "team": "Mafia",
+        "description": "Mafia jamoasiga bir marta maxsus moliyaviy bonus beradi."
+    },
+
+    # 🏙️ SHAHAR
+    {
+        "name": "Detektiv",
+        "team": "Shahar",
+        "description": "Bir o'yinchining Mafia yoki boshqa tomon ekanini tekshiradi."
+    },
+    {
+        "name": "Doktor",
+        "team": "Shahar",
+        "description": "Bir o'yinchini tunda o'limdan himoya qiladi."
+    },
+    {
+        "name": "Qalqon",
+        "team": "Shahar",
+        "description": "Tanlagan odamiga hujumni o'ziga qabul qiladi."
+    },
+    {
+        "name": "Kuzatuvchi",
+        "team": "Shahar",
+        "description": "Tanlagan o'yinchisiga kim tashrif buyurganini ko'radi."
+    },
+    {
+        "name": "Qamoqchi",
+        "team": "Shahar",
+        "description": "Bir o'yinchining tungi qobiliyatini bloklaydi."
+    },
+    {
+        "name": "Sudya",
+        "team": "Shahar",
+        "description": "Bir marta kunduzgi chiqarib yuborish qarorini bekor qiladi."
+    },
+    {
+        "name": "Reanimator",
+        "team": "Shahar",
+        "description": "O'lgan bitta o'yinchini bir marta tiriltira oladi."
+    },
+    {
+        "name": "Sovg'achi",
+        "team": "Shahar",
+        "description": "Har kecha tanlagan o'yinchisiga $10–100 va 1–5 almaz beradi."
+    },
+    {
+        "name": "Muxbir",
+        "team": "Shahar",
+        "description": "Ikki o'yinchining bir tomonda yoki turli tomonda ekanini aniqlaydi."
+    },
+    {
+        "name": "Sherif",
+        "team": "Shahar",
+        "description": "O'yin davomida bir marta o'z qurolidan foydalanib o'yinchini otishi mumkin."
+    },
+
+    # 🎭 MUSTAQIL
+    {
+        "name": "Joker",
+        "team": "Mustaqil",
+        "description": "Kunduzgi ovoz berishda chiqarib yuborilsa, o'zi g'olib bo'ladi."
+    },
+    {
+        "name": "Ovchi",
+        "team": "Mustaqil",
+        "description": "Yashirin topshirig'idagi o'yinchini yo'q qilishga harakat qiladi."
+    },
+    {
+        "name": "Yolg'iz Bo'ri",
+        "team": "Mustaqil",
+        "description": "Hamma tomonlarga qarshi kurashadi va oxirida yolg'iz qolishga harakat qiladi."
+    },
+    {
+        "name": "Niqobchi",
+        "team": "Mustaqil",
+        "description": "Bir marta boshqa o'yinchining ko'rinishini oladi."
+    },
+    {
+        "name": "O'g'ri",
+        "team": "Mustaqil",
+        "description": "Bir marta boshqa o'yinchining qobiliyatini o'g'irlashi mumkin."
+    },
+    {
+        "name": "Arvoh",
+        "team": "Mustaqil",
+        "description": "O'lgandan keyin bir marta tirik o'yinchiga yashirin yordam beradi."
+    },
+    {
+        "name": "Mukofotchi",
+        "team": "Mustaqil",
+        "description": "Bot unga yashirin nishon beradi. Nishon o'lsa, maxsus mukofot oladi."
+    },
+
+    # ⚡ MAXSUS
+    {
+        "name": "Aks-Sado",
+        "team": "Maxsus",
+        "description": "O'ziga ishlatilgan birinchi qobiliyatni uni ishlatgan odamga qaytaradi."
+    },
+    {
+        "name": "Vaqtchi",
+        "team": "Maxsus",
+        "description": "Bir marta o'zini o'limdan saqlab qoladi."
+    },
+    {
+        "name": "Shakl-Almashtiruvchi",
+        "team": "Maxsus",
+        "description": "Bir marta tirik o'yinchining rolini o'ziga oladi."
+    },
+    {
+        "name": "Hacker",
+        "team": "Maxsus",
+        "description": "Bir o'yinchining keyingi tungi qobiliyatini o'chiradi."
+    },
+    {
+        "name": "Folbin",
+        "team": "Maxsus",
+        "description": "O'yin davomida ikki marta o'yinchining tomonini aniqlaydi."
+    },
+    {
+        "name": "Taqdirchi",
+        "team": "Maxsus",
+        "description": "Har kecha tasodifiy tirik o'yinchiga foydali yoki zararli ta'sir yuboradi."
+    }
+]
+
+
+# =========================================================
+# WEB SERVER
+# =========================================================
+
 class Handler(BaseHTTPRequestHandler):
+
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
@@ -33,8 +203,14 @@ def web_server():
     server.serve_forever()
 
 
+# =========================================================
+# PLAYER
+# =========================================================
+
 def get_player(user):
+
     if user.id not in players:
+
         players[user.id] = {
             "name": user.full_name,
             "diamonds": 0,
@@ -43,37 +219,54 @@ def get_player(user):
         }
 
     players[user.id]["name"] = user.full_name
+
     return players[user.id]
 
 
+# =========================================================
+# START
+# =========================================================
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     get_player(update.effective_user)
 
     await update.message.reply_text(
         "🕵️ MAFIA BOT ISHLAYAPTI!\n\n"
+
         "🎭 O'YIN:\n"
         "/newgame - yangi o'yin\n"
         "/join - o'yinga qo'shilish\n"
         "/players - o'yinchilar\n"
         "/startgame - o'yinni boshlash\n\n"
+
         "👤 PROFIL:\n"
         "/profile - profil\n"
         "/balance - balans\n"
         "/money - money\n\n"
+
         "👑 OWNER:\n"
         "/admin - owner panel"
     )
 
 
+# =========================================================
+# ADMIN
+# =========================================================
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if str(update.effective_user.id) != OWNER_ID:
+
         await update.message.reply_text(
             "⛔ Sizda admin huquqi yo'q."
         )
+
         return
 
     await update.message.reply_text(
         "👑 OWNER PANEL\n\n"
+
         "💎 /adddiamonds ID MIQDOR\n"
         "💰 /addbalance ID MIQDOR\n"
         "💎 /bankrot1 ID\n"
@@ -81,11 +274,17 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# =========================================================
+# PROFILE
+# =========================================================
+
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     user = update.effective_user
     player = get_player(user)
 
     await update.message.reply_text(
+
         f"👤 PROFIL\n\n"
         f"📝 Ism: {player['name']}\n"
         f"🆔 ID: {user.id}\n\n"
@@ -95,54 +294,82 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# =========================================================
+# BALANCE
+# =========================================================
+
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     player = get_player(update.effective_user)
 
     await update.message.reply_text(
+
         f"💰 BALANS\n\n"
         f"💎 Almaz: {player['diamonds']}\n"
         f"💰 Money: {player['balance']}"
     )
 
 
+# =========================================================
+# MONEY
+# =========================================================
+
 async def money(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     player = get_player(update.effective_user)
 
     await update.message.reply_text(
+
         f"💰 MONEY\n\n"
         f"💰 Sizda: {player['balance']}"
     )
 
 
+# =========================================================
+# ADD DIAMONDS
+# =========================================================
+
 async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if str(update.effective_user.id) != OWNER_ID:
+
         await update.message.reply_text(
             "⛔ Bu buyruq faqat OWNER uchun."
         )
+
         return
 
     if len(context.args) != 2:
+
         await update.message.reply_text(
             "❌ Format:\n/adddiamonds ID MIQDOR"
         )
+
         return
 
     try:
+
         target_id = int(context.args[0])
         amount = int(context.args[1])
+
     except ValueError:
+
         await update.message.reply_text(
             "❌ ID va miqdor raqam bo'lishi kerak."
         )
+
         return
 
     if amount <= 0:
+
         await update.message.reply_text(
             "❌ Miqdor 0 dan katta bo'lishi kerak."
         )
+
         return
 
     if target_id not in players:
+
         players[target_id] = {
             "name": f"ID {target_id}",
             "diamonds": 0,
@@ -153,6 +380,7 @@ async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players[target_id]["diamonds"] += amount
 
     await update.message.reply_text(
+
         f"✅ Almaz berildi!\n\n"
         f"👤 ID: {target_id}\n"
         f"💎 Qo'shildi: {amount}\n"
@@ -160,307 +388,39 @@ async def adddiamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+# =========================================================
+# ADD BALANCE
+# =========================================================
+
 async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
+
     if str(update.effective_user.id) != OWNER_ID:
+
         await update.message.reply_text(
             "⛔ Bu buyruq faqat OWNER uchun."
         )
+
         return
 
     if len(context.args) != 2:
+
         await update.message.reply_text(
             "❌ Format:\n/addbalance ID MIQDOR"
         )
+
         return
 
     try:
+
         target_id = int(context.args[0])
         amount = int(context.args[1])
+
     except ValueError:
+
         await update.message.reply_text(
             "❌ ID va miqdor raqam bo'lishi kerak."
         )
+
         return
 
-    if amount <= 0:
-        await update.message.reply_text(
-            "❌ Miqdor 0 dan katta bo'lishi kerak."
-        )
-        return
-
-    if target_id not in players:
-        players[target_id] = {
-            "name": f"ID {target_id}",
-            "diamonds": 0,
-            "balance": 0,
-            "games": 0
-        }
-
-    players[target_id]["balance"] += amount
-
-    await update.message.reply_text(
-        f"✅ Money berildi!\n\n"
-        f"👤 ID: {target_id}\n"
-        f"💰 Qo'shildi: {amount}\n"
-        f"💰 Jami: {players[target_id]['balance']}"
-    )
-
-
-async def bankrupt1(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != OWNER_ID:
-        await update.message.reply_text(
-            "⛔ Bu buyruq faqat OWNER uchun."
-        )
-        return
-
-    if len(context.args) != 1:
-        await update.message.reply_text(
-            "❌ Format:\n/bankrot1 ID"
-        )
-        return
-
-    try:
-        target_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text(
-            "❌ ID raqam bo'lishi kerak."
-        )
-        return
-
-    if target_id not in players:
-        await update.message.reply_text(
-            "❌ Bu ID bilan o'yinchi topilmadi."
-        )
-        return
-
-    players[target_id]["diamonds"] = 0
-
-    await update.message.reply_text(
-        f"💎 BANKROT 1\n\n"
-        f"👤 ID: {target_id}\n"
-        f"💎 Almaz: 0"
-    )
-
-
-async def bankrupt2(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if str(update.effective_user.id) != OWNER_ID:
-        await update.message.reply_text(
-            "⛔ Bu buyruq faqat OWNER uchun."
-        )
-        return
-
-    if len(context.args) != 1:
-        await update.message.reply_text(
-            "❌ Format:\n/bankrot2 ID"
-        )
-        return
-
-    try:
-        target_id = int(context.args[0])
-    except ValueError:
-        await update.message.reply_text(
-            "❌ ID raqam bo'lishi kerak."
-        )
-        return
-
-    if target_id not in players:
-        await update.message.reply_text(
-            "❌ Bu ID bilan o'yinchi topilmadi."
-        )
-        return
-
-    players[target_id]["balance"] = 0
-
-    await update.message.reply_text(
-        f"💰 BANKROT 2\n\n"
-        f"👤 ID: {target_id}\n"
-        f"💰 Money: 0"
-    )
-
-
-# =========================
-# MAFIA O'YINI
-# =========================
-
-async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global game_players, game_started
-
-    if game_started:
-        await update.message.reply_text(
-            "⚠️ Hozir o'yin davom etmoqda."
-        )
-        return
-
-    game_players = {}
-
-    await update.message.reply_text(
-        "🎭 YANGI MAFIA O'YINI OCHILDI!\n\n"
-        "👥 O'yinga kirish uchun:\n"
-        "/join\n\n"
-        "📋 O'yinchilarni ko'rish:\n"
-        "/players\n\n"
-        "▶️ Yetarli o'yinchi bo'lgach:\n"
-        "/startgame"
-    )
-
-
-async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global game_started
-
-    if game_started:
-        await update.message.reply_text(
-            "⚠️ O'yin allaqachon boshlangan."
-        )
-        return
-
-    user = update.effective_user
-    get_player(user)
-
-    if user.id in game_players:
-        await update.message.reply_text(
-            "ℹ️ Siz allaqachon o'yindasiz."
-        )
-        return
-
-    game_players[user.id] = {
-        "name": user.full_name,
-        "role": None
-    }
-
-    await update.message.reply_text(
-        f"✅ {user.full_name}, siz Mafia o'yiniga qo'shildingiz!\n\n"
-        f"👥 Hozirgi o'yinchilar: {len(game_players)}"
-    )
-
-
-async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not game_players:
-        await update.message.reply_text(
-            "👥 Hozircha o'yinda hech kim yo'q.\n\n"
-            "/join orqali qo'shiling."
-        )
-        return
-
-    text = "👥 MAFIA O'YINCHILARI:\n\n"
-
-    for number, player in enumerate(game_players.values(), start=1):
-        text += f"{number}. {player['name']}\n"
-
-    text += f"\n👥 Jami: {len(game_players)}"
-
-    await update.message.reply_text(text)
-
-
-async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global game_started
-
-    if game_started:
-        await update.message.reply_text(
-            "⚠️ O'yin allaqachon boshlangan."
-        )
-        return
-
-    if len(game_players) < 4:
-        await update.message.reply_text(
-            "⚠️ O'yinni boshlash uchun kamida 4 ta o'yinchi kerak.\n\n"
-            f"👥 Hozir: {len(game_players)}\n"
-            "👥 Kerak: 4"
-        )
-        return
-
-    user_ids = list(game_players.keys())
-    random.shuffle(user_ids)
-
-    roles = []
-
-    # 4-6 o'yinchi
-    if len(user_ids) <= 6:
-        roles = ["🔪 Mafia", "🕵️ Detektiv", "👨‍⚕️ Doktor"]
-        roles += ["👤 Fuqaro"] * (len(user_ids) - 3)
-
-    # 7-9 o'yinchi
-    else:
-        roles = [
-            "🔪 Mafia",
-            "🔪 Mafia",
-            "🕵️ Detektiv",
-            "👨‍⚕️ Doktor"
-        ]
-        roles += ["👤 Fuqaro"] * (len(user_ids) - 4)
-
-    random.shuffle(roles)
-
-    for user_id, role in zip(user_ids, roles):
-        game_players[user_id]["role"] = role
-
-    game_started = True
-
-    await update.message.reply_text(
-        "🎭 MAFIA O'YINI BOSHLANDI!\n\n"
-        f"👥 O'yinchilar: {len(game_players)}\n\n"
-        "📩 Har bir o'yinchiga o'z roli shaxsiy xabarda yuboriladi."
-    )
-
-    # Rollarni shaxsiy xabarda yuborish
-    for user_id in user_ids:
-        role = game_players[user_id]["role"]
-
-        try:
-            await context.bot.send_message(
-                chat_id=user_id,
-                text=(
-                    "🎭 MAFIA O'YINI\n\n"
-                    f"🎴 Sizning rolingiz: {role}\n\n"
-                    "⚠️ Bu rolni boshqa o'yinchilarga aytmang."
-                )
-            )
-        except Exception:
-            pass
-
-    # O'yin hisoblagichi
-    for user_id in user_ids:
-        players[user_id]["games"] += 1
-
-
-def main():
-    print("MAIN BOSHLANDI", flush=True)
-
-    if not TOKEN:
-        raise RuntimeError("BOT_TOKEN topilmadi!")
-
-    if not OWNER_ID:
-        raise RuntimeError("OWNER_ID topilmadi!")
-
-    print("TOKEN TOPILDI", flush=True)
-    print("OWNER_ID TOPILDI", flush=True)
-
-    threading.Thread(
-        target=web_server,
-        daemon=True
-    ).start()
-
-    app = Application.builder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("admin", admin))
-    app.add_handler(CommandHandler("profile", profile))
-    app.add_handler(CommandHandler("balance", balance))
-    app.add_handler(CommandHandler("money", money))
-
-    app.add_handler(CommandHandler("adddiamonds", adddiamonds))
-    app.add_handler(CommandHandler("addbalance", addbalance))
-    app.add_handler(CommandHandler("bankrot1", bankrupt1))
-    app.add_handler(CommandHandler("bankrot2", bankrupt2))
-
-    app.add_handler(CommandHandler("newgame", newgame))
-    app.add_handler(CommandHandler("join", join))
-    app.add_handler(CommandHandler("players", players_command))
-    app.add_handler(CommandHandler("startgame", startgame))
-
-    print("BOT ISHLADI", flush=True)
-
-    app.run_polling()
-
-
-if __name__ == "__main__":
-    main()
+    if amount <= 
