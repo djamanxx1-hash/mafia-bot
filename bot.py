@@ -10,10 +10,8 @@ TOKEN = os.getenv("BOT_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 OWNER_ID = os.getenv("OWNER_ID")
 
-# O'yinlar
-games = {}
 
-# Hozirgi o'yinchilar
+# O'yinchilar
 players_list = []
 
 
@@ -38,7 +36,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/newgame - yangi oyin\n"
         "/join - oyinga qoshilish\n"
         "/players - oyinchilar\n"
-        "/startgame - oyinni boshlash"
+        "/startgame - oyinni boshlash\n"
+        "/admin - owner panel"
+    )
+
+
+async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = str(update.effective_user.id)
+
+    if user_id != OWNER_ID:
+        await update.message.reply_text(
+            "⛔ Sizda admin huquqi yo'q."
+        )
+        return
+
+    await update.message.reply_text(
+        "👑 OWNER PANEL\n\n"
+        "Siz bot egasisiz.\n\n"
+        "✅ Admin tizimi ishlayapti!"
     )
 
 
@@ -54,7 +69,6 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
 
-    # Bir odamni ikki marta qo'shmaslik
     for player in players_list:
         if player["id"] == user.id:
             await update.message.reply_text(
@@ -107,7 +121,12 @@ def main():
         print("XATO: BOT_TOKEN TOPILMADI!", flush=True)
         raise RuntimeError("BOT_TOKEN topilmadi!")
 
+    if not OWNER_ID:
+        print("XATO: OWNER_ID TOPILMADI!", flush=True)
+        raise RuntimeError("OWNER_ID topilmadi!")
+
     print("TOKEN TOPILDI", flush=True)
+    print("OWNER_ID TOPILDI", flush=True)
 
     threading.Thread(
         target=web_server,
@@ -119,6 +138,7 @@ def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("players", players))
