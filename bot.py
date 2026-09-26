@@ -1,5 +1,6 @@
 import os
 import threading
+import random
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from telegram import Update
@@ -11,6 +12,10 @@ PORT = int(os.getenv("PORT", "10000"))
 OWNER_ID = os.getenv("OWNER_ID")
 
 players = {}
+
+# Hozirgi Mafia o'yini
+game_players = {}
+game_started = False
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -42,14 +47,20 @@ def get_player(user):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    get_player(update.effective_user)
+
     await update.message.reply_text(
-        "🕵️ Mafia bot ishlayapti!\n\n"
-        "/newgame - yangi oyin\n"
-        "/join - oyinga qoshilish\n"
-        "/players - oyinchilar\n"
-        "/startgame - oyinni boshlash\n"
+        "🕵️ MAFIA BOT ISHLAYAPTI!\n\n"
+        "🎭 O'YIN:\n"
+        "/newgame - yangi o'yin\n"
+        "/join - o'yinga qo'shilish\n"
+        "/players - o'yinchilar\n"
+        "/startgame - o'yinni boshlash\n\n"
+        "👤 PROFIL:\n"
         "/profile - profil\n"
         "/balance - balans\n"
+        "/money - money\n\n"
+        "👑 OWNER:\n"
         "/admin - owner panel"
     )
 
@@ -65,8 +76,8 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "👑 OWNER PANEL\n\n"
         "💎 /adddiamonds ID MIQDOR\n"
         "💰 /addbalance ID MIQDOR\n"
-        "💎 /bankrot1 ID - almazni 0 qilish\n"
-        "💰 /bankrot2 ID - money'ni 0 qilish"
+        "💎 /bankrot1 ID\n"
+        "💰 /bankrot2 ID"
     )
 
 
@@ -79,19 +90,27 @@ async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📝 Ism: {player['name']}\n"
         f"🆔 ID: {user.id}\n\n"
         f"💎 Almaz: {player['diamonds']}\n"
-        f"💰 Balans: {player['balance']}\n"
+        f"💰 Money: {player['balance']}\n"
         f"🎮 O'yinlar: {player['games']}"
     )
 
 
 async def balance(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    player = get_player(user)
+    player = get_player(update.effective_user)
 
     await update.message.reply_text(
         f"💰 BALANS\n\n"
         f"💎 Almaz: {player['diamonds']}\n"
-        f"💰 Balans: {player['balance']}"
+        f"💰 Money: {player['balance']}"
+    )
+
+
+async def money(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    player = get_player(update.effective_user)
+
+    await update.message.reply_text(
+        f"💰 MONEY\n\n"
+        f"💰 Sizda: {player['balance']}"
     )
 
 
@@ -180,7 +199,7 @@ async def addbalance(update: Update, context: ContextTypes.DEFAULT_TYPE):
     players[target_id]["balance"] += amount
 
     await update.message.reply_text(
-        f"✅ Balans to'ldirildi!\n\n"
+        f"✅ Money berildi!\n\n"
         f"👤 ID: {target_id}\n"
         f"💰 Qo'shildi: {amount}\n"
         f"💰 Jami: {players[target_id]['balance']}"
@@ -255,55 +274,152 @@ async def bankrupt2(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"💰 BANKROT 2\n\n"
         f"👤 ID: {target_id}\n"
-        f"💰 Balans: 0"
+        f"💰 Money: 0"
     )
 
 
+# =========================
+# MAFIA O'YINI
+# =========================
+
 async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global game_players, game_started
+
+    if game_started:
+        await update.message.reply_text(
+            "⚠️ Hozir o'yin davom etmoqda."
+        )
+        return
+
+    game_players = {}
+
     await update.message.reply_text(
-        "🎭 Yangi oyin ochildi!\n\n"
-        "Oyinga qoshilish uchun /join bosing."
+        "🎭 YANGI MAFIA O'YINI OCHILDI!\n\n"
+        "👥 O'yinga kirish uchun:\n"
+        "/join\n\n"
+        "📋 O'yinchilarni ko'rish:\n"
+        "/players\n\n"
+        "▶️ Yetarli o'yinchi bo'lgach:\n"
+        "/startgame"
     )
 
 
 async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global game_started
+
+    if game_started:
+        await update.message.reply_text(
+            "⚠️ O'yin allaqachon boshlangan."
+        )
+        return
+
     user = update.effective_user
     get_player(user)
 
+    if user.id in game_players:
+        await update.message.reply_text(
+            "ℹ️ Siz allaqachon o'yindasiz."
+        )
+        return
+
+    game_players[user.id] = {
+        "name": user.full_name,
+        "role": None
+    }
+
     await update.message.reply_text(
-        f"✅ {user.full_name}, siz oyinga qoshildingiz!"
+        f"✅ {user.full_name}, siz Mafia o'yiniga qo'shildingiz!\n\n"
+        f"👥 Hozirgi o'yinchilar: {len(game_players)}"
     )
 
 
 async def players_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not players:
+    if not game_players:
         await update.message.reply_text(
-            "👥 Hozircha oyinchilar royxati bosh."
+            "👥 Hozircha o'yinda hech kim yo'q.\n\n"
+            "/join orqali qo'shiling."
         )
         return
 
-    text = "👥 O'YINCHILAR:\n\n"
+    text = "👥 MAFIA O'YINCHILARI:\n\n"
 
-    for number, player in enumerate(players.values(), start=1):
+    for number, player in enumerate(game_players.values(), start=1):
         text += f"{number}. {player['name']}\n"
+
+    text += f"\n👥 Jami: {len(game_players)}"
 
     await update.message.reply_text(text)
 
 
 async def startgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not players:
+    global game_started
+
+    if game_started:
         await update.message.reply_text(
-            "⚠️ Oyinda hech kim yo'q!"
+            "⚠️ O'yin allaqachon boshlangan."
         )
         return
 
-    for player in players.values():
-        player["games"] += 1
+    if len(game_players) < 4:
+        await update.message.reply_text(
+            "⚠️ O'yinni boshlash uchun kamida 4 ta o'yinchi kerak.\n\n"
+            f"👥 Hozir: {len(game_players)}\n"
+            "👥 Kerak: 4"
+        )
+        return
+
+    user_ids = list(game_players.keys())
+    random.shuffle(user_ids)
+
+    roles = []
+
+    # 4-6 o'yinchi
+    if len(user_ids) <= 6:
+        roles = ["🔪 Mafia", "🕵️ Detektiv", "👨‍⚕️ Doktor"]
+        roles += ["👤 Fuqaro"] * (len(user_ids) - 3)
+
+    # 7-9 o'yinchi
+    else:
+        roles = [
+            "🔪 Mafia",
+            "🔪 Mafia",
+            "🕵️ Detektiv",
+            "👨‍⚕️ Doktor"
+        ]
+        roles += ["👤 Fuqaro"] * (len(user_ids) - 4)
+
+    random.shuffle(roles)
+
+    for user_id, role in zip(user_ids, roles):
+        game_players[user_id]["role"] = role
+
+    game_started = True
 
     await update.message.reply_text(
-        f"🎭 O'yin boshlanishga tayyor!\n\n"
-        f"👥 O'yinchilar soni: {len(players)}"
+        "🎭 MAFIA O'YINI BOSHLANDI!\n\n"
+        f"👥 O'yinchilar: {len(game_players)}\n\n"
+        "📩 Har bir o'yinchiga o'z roli shaxsiy xabarda yuboriladi."
     )
+
+    # Rollarni shaxsiy xabarda yuborish
+    for user_id in user_ids:
+        role = game_players[user_id]["role"]
+
+        try:
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=(
+                    "🎭 MAFIA O'YINI\n\n"
+                    f"🎴 Sizning rolingiz: {role}\n\n"
+                    "⚠️ Bu rolni boshqa o'yinchilarga aytmang."
+                )
+            )
+        except Exception:
+            pass
+
+    # O'yin hisoblagichi
+    for user_id in user_ids:
+        players[user_id]["games"] += 1
 
 
 def main():
@@ -329,10 +445,13 @@ def main():
     app.add_handler(CommandHandler("admin", admin))
     app.add_handler(CommandHandler("profile", profile))
     app.add_handler(CommandHandler("balance", balance))
+    app.add_handler(CommandHandler("money", money))
+
     app.add_handler(CommandHandler("adddiamonds", adddiamonds))
     app.add_handler(CommandHandler("addbalance", addbalance))
     app.add_handler(CommandHandler("bankrot1", bankrupt1))
     app.add_handler(CommandHandler("bankrot2", bankrupt2))
+
     app.add_handler(CommandHandler("newgame", newgame))
     app.add_handler(CommandHandler("join", join))
     app.add_handler(CommandHandler("players", players_command))
