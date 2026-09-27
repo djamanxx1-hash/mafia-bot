@@ -9,6 +9,8 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from telegram import (
     Update,
     BotCommand,
+    BotCommandScopeAllPrivateChats,
+    BotCommandScopeAllGroupChats,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
 )
@@ -31,13 +33,11 @@ OWNER_ID = int(os.getenv("OWNER_ID", "0"))
 PORT = int(os.getenv("PORT", "10000"))
 DB_PATH = os.getenv("DB_PATH", "mafia.db")
 
-# Guruhdagi faza rasmlari
 NIGHT_IMAGE_FILE_ID = os.getenv("NIGHT_IMAGE_FILE_ID", "").strip()
 DAY_IMAGE_FILE_ID = os.getenv("DAY_IMAGE_FILE_ID", "").strip()
 VOTE_IMAGE_FILE_ID = os.getenv("VOTE_IMAGE_FILE_ID", "").strip()
 WIN_IMAGE_FILE_ID = os.getenv("WIN_IMAGE_FILE_ID", "").strip()
 
-# Almaz animatsiyasi
 DIAMOND_ANIMATION_FILE_ID = os.getenv(
     "DIAMOND_ANIMATION_FILE_ID", ""
 ).strip()
@@ -129,6 +129,21 @@ def init_db():
             user_id INTEGER NOT NULL,
             PRIMARY KEY(chat_id, user_id)
         );
+
+        CREATE TABLE IF NOT EXISTS para_requests (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            sender_id INTEGER NOT NULL,
+            receiver_id INTEGER NOT NULL,
+            status TEXT DEFAULT 'pending',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS couples (
+            user1_id INTEGER NOT NULL,
+            user2_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            PRIMARY KEY(user1_id, user2_id)
+        );
         """
     )
 
@@ -143,7 +158,7 @@ def init_db():
 
 
 # =========================================================
-# RENDER HEALTH SERVER
+# RENDER HEALTH
 # =========================================================
 
 class HealthHandler(BaseHTTPRequestHandler):
@@ -163,25 +178,17 @@ def run_health_server():
         ("0.0.0.0", PORT),
         HealthHandler,
     )
-
-    logger.info(
-        "Health server PORT %s da ishga tushdi",
-        PORT,
-    )
-
+    logger.info("Health server PORT %s da ishga tushdi", PORT)
     server.serve_forever()
 
 
 # =========================================================
-# GLOBAL HOLATLAR
+# GLOBAL
 # =========================================================
 
 admins = set()
-
 games = {}
-
 pending_inputs = {}
-
 change_locks = set()
 
 
@@ -211,10 +218,7 @@ ROLES = [
     ("Qasoskor", "⚔️"),
 ]
 
-ROLES += [
-    ("Fuqaro", "👤")
-] * 12
-
+ROLES += [("Fuqaro", "👤")] * 12
 
 ROLE_POINTS = {
     "Mafia": 100,
@@ -246,50 +250,37 @@ PROTECTIONS = {
     "universal": (
         "🛡️ Universal himoya",
         "$100",
-        "Mafia va Manyak kabi odatiy hujumlardan "
-        "himoya qiladi. Don va Komissar hujumlariga "
-        "taalluqli emas.",
+        "Mafia va Manyak kabi odatiy hujumlardan himoya qiladi.",
     ),
-
     "vote": (
         "🗳️ Ovoz himoyasi",
         "💎 1",
-        "Ovoz orqali chiqarib yuborilishdan "
-        "bir marta himoya qiladi.",
+        "Ovoz orqali chiqarilishdan bir marta himoya qiladi.",
     ),
-
     "fake_doc": (
         "📄 Soxta hujjat",
         "$200",
-        "Tekshiruv vaqtida haqiqiy rolingiz o‘rniga "
-        "soxta ma'lumot ko‘rsatiladi.",
+        "Tekshiruvda soxta rol ko‘rsatadi.",
     ),
-
     "protect_other": (
         "🤝 Boshqa o‘yinchini himoyalash",
         "💎 5",
-        "Bir kechada boshqa o‘yinchini himoya "
-        "qilish imkonini beradi.",
+        "Bir kechada boshqa o‘yinchini himoya qiladi.",
     ),
-
     "killer": (
         "⚔️ Qotilga qarshi himoya",
         "💎 3",
-        "Manyak/qotil hujumidan bir marta "
-        "himoya qiladi.",
+        "Manyak hujumidan bir marta himoya qiladi.",
     ),
-
     "silence": (
         "🔇 Ovoz bloklash",
         "$100",
-        "Tanlangan o‘yinchining ovoz berishini "
-        "bir kechaga bloklaydi.",
+        "Tanlangan o‘yinchining ovozini bloklaydi.",
     ),
-
     "poison": (
         "☠️ Zahar himoyasi",
         "💎 3",
-        "Zahar ta'siridan bir marta himoya qiladi.",
+        "Zahar ta’siridan himoya qiladi.",
     ),
 }
 
@@ -319,7 +310,6 @@ def new_game(chat_id):
 def game_for(chat_id):
     if chat_id not in games:
         games[chat_id] = new_game(chat_id)
-
     return games[chat_id]
 
 
@@ -333,15 +323,11 @@ def alive_players(game):
 
 def role_of(game, user_id):
     player = game["players"].get(user_id)
-
-    if player:
-        return player["role"]
-
-    return None
+    return player["role"] if player else None
 
 
 # =========================================================
-# UMUMIY FUNKSIYALAR
+# UMUMIY
 # =========================================================
 
 def now_iso():
@@ -359,11 +345,7 @@ def get_player(user):
     if row is None:
         con.execute(
             """
-            INSERT INTO players(
-                user_id,
-                name,
-                username
-            )
+            INSERT INTO players(user_id, name, username)
             VALUES(?,?,?)
             """,
             (
@@ -372,7 +354,6 @@ def get_player(user):
                 user.username or "",
             ),
         )
-
     else:
         con.execute(
             """
@@ -395,20 +376,16 @@ def get_player(user):
     ).fetchone()
 
     con.close()
-
     return row
 
 
 def get_player_by_id(user_id):
     con = db()
-
     row = con.execute(
         "SELECT * FROM players WHERE user_id=?",
         (user_id,),
     ).fetchone()
-
     con.close()
-
     return row
 
 
@@ -429,51 +406,25 @@ def save_balances(
         con.close()
         return False
 
-    new_diamonds = (
-        row["diamonds"]
-        if diamonds is None
-        else diamonds
-    )
+    d = row["diamonds"] if diamonds is None else diamonds
+    m = row["money"] if money is None else money
+    dl = row["dollars"] if dollars is None else dollars
 
-    new_money = (
-        row["money"]
-        if money is None
-        else money
-    )
-
-    new_dollars = (
-        row["dollars"]
-        if dollars is None
-        else dollars
-    )
-
-    if (
-        new_diamonds < 0
-        or new_money < 0
-        or new_dollars < 0
-    ):
+    if d < 0 or m < 0 or dl < 0:
         con.close()
         return False
 
     con.execute(
         """
         UPDATE players
-        SET diamonds=?,
-            money=?,
-            dollars=?
+        SET diamonds=?, money=?, dollars=?
         WHERE user_id=?
         """,
-        (
-            new_diamonds,
-            new_money,
-            new_dollars,
-            user_id,
-        ),
+        (d, m, dl, user_id),
     )
 
     con.commit()
     con.close()
-
     return True
 
 
@@ -484,58 +435,34 @@ def add_points(user_id, amount, reason=""):
     con = db()
 
     con.execute(
-        """
-        UPDATE players
-        SET points=points+?
-        WHERE user_id=?
-        """,
-        (
-            amount,
-            user_id,
-        ),
+        "UPDATE players SET points=points+? WHERE user_id=?",
+        (amount, user_id),
     )
 
     con.execute(
         """
         INSERT INTO point_events(
-            user_id,
-            points,
-            created_at,
-            reason
+            user_id, points, created_at, reason
         )
         VALUES(?,?,?,?)
         """,
-        (
-            user_id,
-            amount,
-            now_iso(),
-            reason,
-        ),
+        (user_id, amount, now_iso(), reason),
     )
 
     con.commit()
     con.close()
 
 
-def add_stats(
-    user_id,
-    games_count=0,
-    wins=0,
-):
+def add_stats(user_id, games_count=0, wins=0):
     con = db()
 
     con.execute(
         """
         UPDATE players
-        SET games=games+?,
-            wins=wins+?
+        SET games=games+?, wins=wins+?
         WHERE user_id=?
         """,
-        (
-            games_count,
-            wins,
-            user_id,
-        ),
+        (games_count, wins, user_id),
     )
 
     con.commit()
@@ -549,32 +476,24 @@ def parse_int(value):
         return None
 
 
-def display_name(user_id):
-    row = get_player_by_id(user_id)
-
-    if not row:
-        return str(user_id)
-
-    return (
-        row["name"]
-        or row["username"]
-        or str(user_id)
-    )
-
-
 def mention(user_id):
     row = get_player_by_id(user_id)
 
-    if row:
-        name = row["name"][:40]
-    else:
-        name = str(user_id)
+    name = (
+        row["name"][:40]
+        if row
+        else str(user_id)
+    )
 
     return (
         f'<a href="tg://user?id={user_id}">'
-        f"{name}"
-        f"</a>"
+        f"{name}</a>"
     )
+
+
+def banned(user_id):
+    row = get_player_by_id(user_id)
+    return bool(row and row["banned"])
 
 
 # =========================================================
@@ -582,17 +501,11 @@ def mention(user_id):
 # =========================================================
 
 def is_owner(user_id):
-    return (
-        OWNER_ID != 0
-        and user_id == OWNER_ID
-    )
+    return OWNER_ID != 0 and user_id == OWNER_ID
 
 
 def is_admin(user_id):
-    return (
-        is_owner(user_id)
-        or user_id in admins
-    )
+    return is_owner(user_id) or user_id in admins
 
 
 def load_admins():
@@ -604,21 +517,9 @@ def load_admins():
         "SELECT user_id FROM admins"
     ).fetchall()
 
-    admins = {
-        row[0]
-        for row in rows
-    }
+    admins = {row[0] for row in rows}
 
     con.close()
-
-
-def banned(user_id):
-    row = get_player_by_id(user_id)
-
-    return bool(
-        row
-        and row["banned"]
-    )
 
 
 # =========================================================
@@ -637,10 +538,7 @@ def track_group_user(update):
 
     con.execute(
         """
-        INSERT OR IGNORE INTO group_members(
-            chat_id,
-            user_id
-        )
+        INSERT OR IGNORE INTO group_members(chat_id, user_id)
         VALUES(?,?)
         """,
         (
@@ -654,17 +552,14 @@ def track_group_user(update):
 
 
 # =========================================================
-# PROTECTION DATABASE
+# HIMOYA DB
 # =========================================================
 
 def ensure_protection_row(user_id):
     con = db()
 
     con.execute(
-        """
-        INSERT OR IGNORE INTO protections(user_id)
-        VALUES(?)
-        """,
+        "INSERT OR IGNORE INTO protections(user_id) VALUES(?)",
         (user_id,),
     )
 
@@ -684,17 +579,10 @@ def protection_count(user_id, key):
 
     con.close()
 
-    if not row:
-        return 0
-
-    return int(row[0])
+    return int(row[0]) if row else 0
 
 
-def change_protection(
-    user_id,
-    key,
-    delta,
-):
+def change_protection(user_id, key, delta):
     ensure_protection_row(user_id)
 
     con = db()
@@ -705,7 +593,6 @@ def change_protection(
     ).fetchone()
 
     current = int(row[0])
-
     new_value = current + delta
 
     if new_value < 0:
@@ -713,20 +600,12 @@ def change_protection(
         return False
 
     con.execute(
-        f"""
-        UPDATE protections
-        SET {key}=?
-        WHERE user_id=?
-        """,
-        (
-            new_value,
-            user_id,
-        ),
+        f"UPDATE protections SET {key}=? WHERE user_id=?",
+        (new_value, user_id),
     )
 
     con.commit()
     con.close()
-
     return True
 
 
@@ -734,12 +613,7 @@ def change_protection(
 # RASMLAR
 # =========================================================
 
-async def send_phase_image(
-    context,
-    chat_id,
-    phase,
-    caption,
-):
+async def send_phase_image(context, chat_id, phase, caption):
     images = {
         "night": NIGHT_IMAGE_FILE_ID,
         "day": DAY_IMAGE_FILE_ID,
@@ -747,10 +621,7 @@ async def send_phase_image(
         "win": WIN_IMAGE_FILE_ID,
     }
 
-    file_id = images.get(
-        phase,
-        "",
-    )
+    file_id = images.get(phase, "")
 
     if file_id:
         try:
@@ -761,11 +632,8 @@ async def send_phase_image(
                 parse_mode="HTML",
             )
             return
-
         except Exception:
-            logger.exception(
-                "Faza rasmi yuborilmadi"
-            )
+            logger.exception("Faza rasmi yuborilmadi")
 
     await context.bot.send_message(
         chat_id=chat_id,
@@ -774,11 +642,7 @@ async def send_phase_image(
     )
 
 
-async def announce(
-    context,
-    chat_id,
-    text,
-):
+async def announce(context, chat_id, text):
     await context.bot.send_message(
         chat_id=chat_id,
         text=text,
@@ -787,7 +651,8 @@ async def announce(
 
 
 # =========================================================
-# PROFIL
+# PROFILE
+# FAQAT GURUHDA
 # =========================================================
 
 def profile_text(row):
@@ -829,149 +694,47 @@ def profile_keyboard():
     )
 
 
-# =========================================================
-# ALMAZ DO'KONI
-# =========================================================
+async def profile_cmd(update, context):
+    if update.effective_chat.type == "private":
+        await update.effective_message.reply_text(
+            "❌ /profile faqat guruhda ishlaydi."
+        )
+        return
 
-def diamond_shop_keyboard():
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "💎1 — 500 💰",
-                    callback_data="buydia:1",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "💎5 — 2 500 💰",
-                    callback_data="buydia:5",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "💎10 — 5 000 💰",
-                    callback_data="buydia:10",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "💎20 — 10 000 💰",
-                    callback_data="buydia:20",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "⬅️ Profil",
-                    callback_data="back_profile",
-                )
-            ],
-        ]
-    )
+    target_id = None
 
-
-# =========================================================
-# HIMOYA MARKAZI
-# =========================================================
-
-def protection_keyboard():
-    keys = list(PROTECTIONS.keys())
-
-    rows = []
-
-    for i in range(
-        0,
-        len(keys),
-        2,
-    ):
-        row = []
-
-        for key in keys[i:i + 2]:
-            row.append(
-                InlineKeyboardButton(
-                    PROTECTIONS[key][0],
-                    callback_data=f"prot:{key}",
-                )
-            )
-
-        rows.append(row)
-
-    rows.append(
-        [
-            InlineKeyboardButton(
-                "⬅️ Profil",
-                callback_data="back_profile",
-            )
-        ]
-    )
-
-    return InlineKeyboardMarkup(rows)
-
-
-def protection_text(user_id):
-    lines = [
-        "🛡️ <b>HIMOYA MARKAZI</b>",
-        "",
-        "Har bir himoya sotib olingandan keyin "
-        "inventarda saqlanadi.",
-        "",
-    ]
-
-    for key, (
-        name,
-        price,
-        desc,
-    ) in PROTECTIONS.items():
-
-        lines.append(
-            f"{name} — <b>{price}</b> | "
-            f"Mavjud: <b>{protection_count(user_id, key)}</b>"
+    if update.message.reply_to_message:
+        target_id = (
+            update.message
+            .reply_to_message
+            .from_user
+            .id
         )
 
-        lines.append(
-            f"↳ {desc}"
+    elif context.args:
+        target_id = parse_int(context.args[0])
+
+    else:
+        target_id = update.effective_user.id
+
+    if not target_id:
+        await update.effective_message.reply_text(
+            "❌ O‘yinchi topilmadi."
         )
+        return
 
-        lines.append("")
+    row = get_player_by_id(target_id)
 
-    return "\n".join(lines)
+    if not row:
+        await update.effective_message.reply_text(
+            "❌ Bu o‘yinchi hali botdan foydalanmagan."
+        )
+        return
 
-
-def protection_detail(
-    user_id,
-    key,
-):
-    name, price, desc = PROTECTIONS[key]
-
-    count = protection_count(
-        user_id,
-        key,
-    )
-
-    return (
-        f"{name}\n\n"
-        f"💳 Narxi: <b>{price}</b>\n"
-        f"📦 Sizda: <b>{count}</b>\n\n"
-        f"ℹ️ {desc}"
-    )
-
-
-def protection_detail_keyboard(key):
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton(
-                    "🛒 Sotib olish",
-                    callback_data=f"buyprot:{key}",
-                )
-            ],
-            [
-                InlineKeyboardButton(
-                    "⬅️ Himoya markazi",
-                    callback_data="protection_menu",
-                )
-            ],
-        ]
+    await update.effective_message.reply_text(
+        profile_text(row),
+        parse_mode="HTML",
+        reply_markup=profile_keyboard(),
     )
 
 
@@ -979,10 +742,7 @@ def protection_detail_keyboard(key):
 # START
 # =========================================================
 
-async def start(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def start(update, context):
     user = update.effective_user
 
     get_player(user)
@@ -998,107 +758,42 @@ async def start(
         "👑 <b>MAFIA BOT</b>\n\n"
         "🎭 Sirlar • Intriga • G‘alaba\n"
         "💎 Almaz • 💰 Pul • ⭐ Ball\n\n"
-        "Profil va imkoniyatlarni pastdagi "
-        "menyudan boshqaring.",
+        "Guruhga qo‘shiling va o‘yinni boshlang!",
         parse_mode="HTML",
-        reply_markup=profile_keyboard(),
     )
 
 
-async def profile_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    row = get_player(
-        update.effective_user
-    )
+# =========================================================
+# ROLES
+# =========================================================
 
-    track_group_user(update)
+async def roles_cmd(update, context):
+    seen = set()
+    lines = [
+        "🎭 <b>O‘YIN ROLLARI</b>",
+        "",
+    ]
+
+    for role, emoji in ROLES:
+        if role in seen:
+            continue
+
+        seen.add(role)
+        lines.append(
+            f"{emoji} <b>{role}</b>"
+        )
 
     await update.effective_message.reply_text(
-        profile_text(row),
-        parse_mode="HTML",
-        reply_markup=profile_keyboard(),
-    )
-
-
-# =========================================================
-# MONEY
-# =========================================================
-
-async def money_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not update.message:
-        return
-
-    if not update.message.reply_to_message:
-        await update.effective_message.reply_text(
-            "💰 Pul berish uchun boshqa "
-            "o‘yinchining xabariga reply qilib:\n\n"
-            "/money 5000"
-        )
-        return
-
-    amount = (
-        parse_int(context.args[0])
-        if context.args
-        else None
-    )
-
-    if amount is None or amount <= 0:
-        await update.effective_message.reply_text(
-            "❌ To‘g‘ri summa kiriting.\n"
-            "Masalan: /money 5000"
-        )
-        return
-
-    sender = get_player(
-        update.effective_user
-    )
-
-    target_user = (
-        update.message
-        .reply_to_message
-        .from_user
-    )
-
-    target = get_player(target_user)
-
-    if sender["money"] < amount:
-        await update.effective_message.reply_text(
-            "❌ Pul yetarli emas."
-        )
-        return
-
-    save_balances(
-        sender["user_id"],
-        money=sender["money"] - amount,
-    )
-
-    save_balances(
-        target["user_id"],
-        money=target["money"] + amount,
-    )
-
-    await update.effective_message.reply_text(
-        "💸 <b>PUL O‘TKAZMASI</b>\n\n"
-        f"{mention(sender['user_id'])} ➜ "
-        f"{mention(target['user_id'])}\n"
-        f"💰 <b>{amount:,}</b> pul yuborildi!",
+        "\n".join(lines),
         parse_mode="HTML",
     )
 
 
 # =========================================================
-# ALMAZ YUBORISH
+# GIVE DIAMONDS
 # =========================================================
 
-async def gift_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def gift_cmd(update, context):
     if not update.message:
         return
 
@@ -1112,7 +807,6 @@ async def gift_cmd(
             .from_user
             .id
         )
-
         amount = (
             parse_int(context.args[0])
             if context.args
@@ -1120,38 +814,24 @@ async def gift_cmd(
         )
 
     elif len(context.args) >= 2:
-        target_id = parse_int(
-            context.args[0]
-        )
+        target_id = parse_int(context.args[0])
+        amount = parse_int(context.args[1])
 
-        amount = parse_int(
-            context.args[1]
-        )
-
-    if (
-        not target_id
-        or not amount
-        or amount <= 0
-    ):
+    if not target_id or not amount or amount <= 0:
         await update.message.reply_text(
-            "🎁 Reply qilib /give 1\n"
-            "yoki\n"
+            "🎁 Reply qilib:\n"
+            "/give 1\n\n"
+            "yoki:\n"
             "/give TELEGRAM_ID 1"
         )
         return
 
-    sender = get_player(
-        update.effective_user
-    )
-
-    target = get_player_by_id(
-        target_id
-    )
+    sender = get_player(update.effective_user)
+    target = get_player_by_id(target_id)
 
     if not target:
         await update.message.reply_text(
-            "❌ Bu o‘yinchi botni hali "
-            "/start qilmagan."
+            "❌ Bu o‘yinchi botni hali /start qilmagan."
         )
         return
 
@@ -1177,20 +857,15 @@ async def gift_cmd(
         diamonds=target["diamonds"] + amount,
     )
 
-    if DIAMOND_ANIMATION_FILE_ID:
-        try:
+    try:
+        if DIAMOND_ANIMATION_FILE_ID:
             await context.bot.send_animation(
                 target_id,
                 DIAMOND_ANIMATION_FILE_ID,
-                caption=(
-                    f"💎 Sizga {amount} ta "
-                    "almaz yuborildi!"
-                ),
+                caption=f"💎 Sizga {amount} ta almaz yuborildi!",
             )
-        except Exception:
-            logger.exception(
-                "Almaz animatsiyasi yuborilmadi"
-            )
+    except Exception:
+        pass
 
     await update.message.reply_text(
         "💎 <b>ALMAZ SOVG‘ASI</b>\n\n"
@@ -1202,28 +877,482 @@ async def gift_cmd(
 
 
 # =========================================================
-# EXCHANGE
+# PARA TIZIMI
 # =========================================================
 
-async def exchange_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    await update.effective_message.reply_text(
-        "ℹ️ /exchange o‘chirildi.\n\n"
-        "💎 Almazni Profil → "
-        "💎 Almaz sotib olish orqali oling."
+def get_couple(user_id):
+    con = db()
+
+    row = con.execute(
+        """
+        SELECT user1_id, user2_id
+        FROM couples
+        WHERE user1_id=? OR user2_id=?
+        LIMIT 1
+        """,
+        (user_id, user_id),
+    ).fetchone()
+
+    con.close()
+
+    return row
+
+
+def create_couple(user1_id, user2_id):
+    if user1_id == user2_id:
+        return False
+
+    con = db()
+
+    exists1 = con.execute(
+        """
+        SELECT 1 FROM couples
+        WHERE user1_id=? OR user2_id=?
+        """,
+        (user1_id, user1_id),
+    ).fetchone()
+
+    exists2 = con.execute(
+        """
+        SELECT 1 FROM couples
+        WHERE user1_id=? OR user2_id=?
+        """,
+        (user2_id, user2_id),
+    ).fetchone()
+
+    if exists1 or exists2:
+        con.close()
+        return False
+
+    a, b = sorted(
+        [user1_id, user2_id]
     )
+
+    con.execute(
+        """
+        INSERT INTO couples(
+            user1_id,
+            user2_id,
+            created_at
+        )
+        VALUES(?,?,?)
+        """,
+        (a, b, now_iso()),
+    )
+
+    con.commit()
+    con.close()
+
+    return True
+
+
+async def para_cmd(update, context):
+    if update.effective_chat.type == "private":
+        await update.effective_message.reply_text(
+            "❌ /para faqat guruhda ishlaydi."
+        )
+        return
+
+    sender = get_player(update.effective_user)
+
+    target_id = None
+
+    if update.message.reply_to_message:
+        target_id = (
+            update.message
+            .reply_to_message
+            .from_user
+            .id
+        )
+
+    elif context.args:
+        target_id = parse_int(context.args[0])
+
+    if not target_id:
+        await update.effective_message.reply_text(
+            "❤️ Para so‘rov yuborish uchun:\n\n"
+            "1️⃣ Odamga reply qilib /para yozing\n"
+            "yoki\n"
+            "2️⃣ /para TELEGRAM_ID"
+        )
+        return
+
+    if target_id == sender["user_id"]:
+        await update.effective_message.reply_text(
+            "❌ O‘zingizga para so‘rovi yubora olmaysiz."
+        )
+        return
+
+    target = get_player_by_id(target_id)
+
+    if not target:
+        await update.effective_message.reply_text(
+            "❌ Bu odam hali botni /start qilmagan."
+        )
+        return
+
+    if get_couple(sender["user_id"]):
+        await update.effective_message.reply_text(
+            "❌ Siz allaqachon haqiqiy para bilan juftlashgansiz."
+        )
+        return
+
+    if get_couple(target_id):
+        await update.effective_message.reply_text(
+            "❌ Bu odam allaqachon haqiqiy para bilan juftlashgan."
+        )
+        return
+
+    con = db()
+
+    pending = con.execute(
+        """
+        SELECT 1
+        FROM para_requests
+        WHERE sender_id=?
+        AND receiver_id=?
+        AND status='pending'
+        """,
+        (
+            sender["user_id"],
+            target_id,
+        ),
+    ).fetchone()
+
+    con.close()
+
+    if pending:
+        await update.effective_message.reply_text(
+            "⏳ Siz bu odamga allaqachon para so‘rovi yuborgansiz."
+        )
+        return
+
+    con = db()
+
+    con.execute(
+        """
+        INSERT INTO para_requests(
+            sender_id,
+            receiver_id,
+            status,
+            created_at
+        )
+        VALUES(?,?,?,?)
+        """,
+        (
+            sender["user_id"],
+            target_id,
+            "pending",
+            now_iso(),
+        ),
+    )
+
+    con.commit()
+    con.close()
+
+    keyboard = InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "❤️ Qabul qilish",
+                    callback_data=(
+                        f"para_accept:{sender['user_id']}:{target_id}"
+                    ),
+                ),
+                InlineKeyboardButton(
+                    "❌ Rad qilish",
+                    callback_data=(
+                        f"para_reject:{sender['user_id']}:{target_id}"
+                    ),
+                ),
+            ]
+        ]
+    )
+
+    try:
+        await context.bot.send_message(
+            target_id,
+            "💌 <b>PARA SO‘ROVI</b>\n\n"
+            f"❤️ Sizga {mention(sender['user_id'])} "
+            "para so‘rovi yubordi.\n\n"
+            "Qabul qilasizmi?",
+            parse_mode="HTML",
+            reply_markup=keyboard,
+        )
+    except Exception:
+        con = db()
+
+        con.execute(
+            """
+            UPDATE para_requests
+            SET status='failed'
+            WHERE sender_id=?
+            AND receiver_id=?
+            AND status='pending'
+            """,
+            (sender["user_id"], target_id),
+        )
+
+        con.commit()
+        con.close()
+
+        await update.effective_message.reply_text(
+            "❌ Bu odamga bot shaxsiy xabar yubora olmadi.\n"
+            "U avval botni /start qilishi kerak."
+        )
+        return
+
+    await update.effective_message.reply_text(
+        "💌 Para so‘rovi yuborildi."
+    )
+
+
+async def mypara_cmd(update, context):
+    if update.effective_chat.type == "private":
+        await update.effective_message.reply_text(
+            "❌ /mypara faqat guruhda ishlaydi."
+        )
+        return
+
+    row = get_couple(
+        update.effective_user.id
+    )
+
+    if not row:
+        await update.effective_message.reply_text(
+            "💔 Sizning hozircha haqiqiy parangiz yo‘q."
+        )
+        return
+
+    user1 = get_player_by_id(row["user1_id"])
+    user2 = get_player_by_id(row["user2_id"])
+
+    if not user1 or not user2:
+        await update.effective_message.reply_text(
+            "❌ Para ma’lumoti topilmadi."
+        )
+        return
+
+    await update.effective_message.reply_text(
+        "❤️ <b>HAQIQIY PARA</b>\n\n"
+        f"{mention(user1['user_id'])} ❤️ "
+        f"{mention(user2['user_id'])}",
+        parse_mode="HTML",
+    )
+
+
+async def youpara_cmd(update, context):
+    if not is_admin(update.effective_user.id):
+        await update.effective_message.reply_text(
+            "⛔ Bu buyruq faqat bot egasi va adminlar uchun."
+        )
+        return
+
+    con = db()
+
+    rows = con.execute(
+        """
+        SELECT user1_id, user2_id, created_at
+        FROM couples
+        ORDER BY created_at DESC
+        """
+    ).fetchall()
+
+    con.close()
+
+    if not rows:
+        await update.effective_message.reply_text(
+            "💔 DBda hozircha haqiqiy para yo‘q."
+        )
+        return
+
+    lines = [
+        "🔐 <b>PARA DATABASE</b>",
+        "",
+    ]
+
+    for i, row in enumerate(rows, 1):
+        lines.append(
+            f"{i}. {mention(row['user1_id'])} ❤️ "
+            f"{mention(row['user2_id'])}"
+        )
+
+    await update.effective_message.reply_text(
+        "\n".join(lines),
+        parse_mode="HTML",
+    )
+
+
+# =========================================================
+# PARA CALLBACK
+# =========================================================
+
+async def para_callback(query, context, data):
+    parts = data.split(":")
+
+    if len(parts) != 3:
+        return
+
+    action = parts[0]
+    sender_id = parse_int(parts[1])
+    receiver_id = parse_int(parts[2])
+
+    if not sender_id or not receiver_id:
+        return
+
+    if query.from_user.id != receiver_id:
+        await query.answer(
+            "❌ Bu para so‘rovi siz uchun emas.",
+            show_alert=True,
+        )
+        return
+
+    con = db()
+
+    request = con.execute(
+        """
+        SELECT *
+        FROM para_requests
+        WHERE sender_id=?
+        AND receiver_id=?
+        AND status='pending'
+        ORDER BY id DESC
+        LIMIT 1
+        """,
+        (sender_id, receiver_id),
+    ).fetchone()
+
+    con.close()
+
+    if not request:
+        await query.answer(
+            "❌ Bu so‘rov allaqachon yakunlangan.",
+            show_alert=True,
+        )
+        return
+
+    if action == "para_reject":
+        con = db()
+
+        con.execute(
+            """
+            UPDATE para_requests
+            SET status='rejected'
+            WHERE id=?
+            """,
+            (request["id"],),
+        )
+
+        con.commit()
+        con.close()
+
+        await query.edit_message_text(
+            "❌ <b>PARA SO‘ROVI RAD ETILDI</b>",
+            parse_mode="HTML",
+        )
+
+        try:
+            await context.bot.send_message(
+                sender_id,
+                f"❌ {mention(receiver_id)} "
+                "para so‘rovingizni rad etdi.",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
+
+        return
+
+    if action == "para_accept":
+        if get_couple(sender_id) or get_couple(receiver_id):
+            con = db()
+
+            con.execute(
+                """
+                UPDATE para_requests
+                SET status='cancelled'
+                WHERE id=?
+                """,
+                (request["id"],),
+            )
+
+            con.commit()
+            con.close()
+
+            await query.edit_message_text(
+                "❌ Para yaratilmadi.\n"
+                "Sizlardan biri allaqachon juftlashgan.",
+            )
+            return
+
+        created = create_couple(
+            sender_id,
+            receiver_id,
+        )
+
+        if not created:
+            await query.answer(
+                "❌ Para yaratilmadi.",
+                show_alert=True,
+            )
+            return
+
+        con = db()
+
+        con.execute(
+            """
+            UPDATE para_requests
+            SET status='accepted'
+            WHERE id=?
+            """,
+            (request["id"],),
+        )
+
+        con.execute(
+            """
+            UPDATE para_requests
+            SET status='cancelled'
+            WHERE (
+                sender_id IN (?,?)
+                OR receiver_id IN (?,?)
+            )
+            AND status='pending'
+            """,
+            (
+                sender_id,
+                receiver_id,
+                sender_id,
+                receiver_id,
+            ),
+        )
+
+        con.commit()
+        con.close()
+
+        await query.edit_message_text(
+            "❤️ <b>PARA QABUL QILINDI!</b>\n\n"
+            f"{mention(sender_id)} ❤️ "
+            f"{mention(receiver_id)}",
+            parse_mode="HTML",
+        )
+
+        try:
+            await context.bot.send_message(
+                sender_id,
+                "❤️ <b>PARA QABUL QILINDI!</b>\n\n"
+                f"{mention(sender_id)} ❤️ "
+                f"{mention(receiver_id)}",
+                parse_mode="HTML",
+            )
+        except Exception:
+            pass
 
 
 # =========================================================
 # CHANGE
 # =========================================================
 
-async def change_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def change_cmd(update, context):
     if update.effective_chat.type == "private":
         await update.effective_message.reply_text(
             "❌ /change faqat guruhda ishlaydi."
@@ -1232,15 +1361,11 @@ async def change_cmd(
 
     if not context.args:
         await update.effective_message.reply_text(
-            "🎁 Misol:\n"
-            "/change 100\n\n"
-            "Mukofot: 100 💎"
+            "🎁 Misol:\n/change 100"
         )
         return
 
-    prize = parse_int(
-        context.args[0]
-    )
+    prize = parse_int(context.args[0])
 
     if prize is None or prize <= 0:
         await update.effective_message.reply_text(
@@ -1248,14 +1373,11 @@ async def change_cmd(
         )
         return
 
-    creator = get_player(
-        update.effective_user
-    )
+    creator = get_player(update.effective_user)
 
     if creator["diamonds"] < prize:
         await update.effective_message.reply_text(
-            "❌ Sizda bu /change uchun "
-            "yetarli 💎 yo‘q."
+            "❌ Sizda yetarli 💎 yo‘q."
         )
         return
 
@@ -1265,10 +1387,8 @@ async def change_cmd(
 
     old = con.execute(
         """
-        SELECT *
-        FROM changes
-        WHERE chat_id=?
-        AND active=1
+        SELECT * FROM changes
+        WHERE chat_id=? AND active=1
         """,
         (chat_id,),
     ).fetchone()
@@ -1277,8 +1397,7 @@ async def change_cmd(
 
     if old:
         await update.effective_message.reply_text(
-            "❌ Bu guruhda allaqachon "
-            "faol /change bor."
+            "❌ Bu guruhda allaqachon faol /change bor."
         )
         return
 
@@ -1292,11 +1411,7 @@ async def change_cmd(
     con.execute(
         """
         INSERT OR REPLACE INTO changes(
-            chat_id,
-            creator_id,
-            prize,
-            message_id,
-            active
+            chat_id, creator_id, prize, message_id, active
         )
         VALUES(?,?,?,?,1)
         """,
@@ -1309,10 +1424,7 @@ async def change_cmd(
     )
 
     con.execute(
-        """
-        DELETE FROM change_participants
-        WHERE chat_id=?
-        """,
+        "DELETE FROM change_participants WHERE chat_id=?",
         (chat_id,),
     )
 
@@ -1337,7 +1449,7 @@ async def change_cmd(
     msg = await update.effective_message.reply_text(
         "🎁 <b>CHANGE BOSHLANDI!</b>\n\n"
         f"💎 Mukofot: <b>{prize}</b>\n"
-        f"👥 Maksimal: <b>{CHANGE_MAX}</b> ishtirokchi\n\n"
+        f"👥 Maksimal: <b>{CHANGE_MAX}</b>\n\n"
         "Qatnashish uchun tugmani bosing!",
         parse_mode="HTML",
         reply_markup=keyboard,
@@ -1351,36 +1463,27 @@ async def change_cmd(
         SET message_id=?
         WHERE chat_id=?
         """,
-        (
-            msg.message_id,
-            chat_id,
-        ),
+        (msg.message_id, chat_id),
     )
 
     con.commit()
     con.close()
 
 
-async def finish_change(
-    context,
-    chat_id,
-):
+async def finish_change(context, chat_id):
     con = db()
 
     change = con.execute(
         """
-        SELECT *
-        FROM changes
-        WHERE chat_id=?
-        AND active=1
+        SELECT * FROM changes
+        WHERE chat_id=? AND active=1
         """,
         (chat_id,),
     ).fetchone()
 
     participants = con.execute(
         """
-        SELECT user_id
-        FROM change_participants
+        SELECT user_id FROM change_participants
         WHERE chat_id=?
         """,
         (chat_id,),
@@ -1391,33 +1494,21 @@ async def finish_change(
     if not change:
         return False
 
-    ids = [
-        row[0]
-        for row in participants
-    ]
+    ids = [row[0] for row in participants]
 
     if not ids:
-        creator = get_player_by_id(
-            change["creator_id"]
-        )
+        creator = get_player_by_id(change["creator_id"])
 
         if creator:
             save_balances(
                 creator["user_id"],
-                diamonds=(
-                    creator["diamonds"]
-                    + change["prize"]
-                ),
+                diamonds=creator["diamonds"] + change["prize"],
             )
 
         con = db()
 
         con.execute(
-            """
-            UPDATE changes
-            SET active=0
-            WHERE chat_id=?
-            """,
+            "UPDATE changes SET active=0 WHERE chat_id=?",
             (chat_id,),
         )
 
@@ -1427,36 +1518,25 @@ async def finish_change(
         await context.bot.send_message(
             chat_id,
             "🛑 <b>CHANGE YAKUNLANDI</b>\n\n"
-            "Ishtirokchi bo‘lmagani uchun "
-            "mukofot egasiga qaytarildi.",
+            "Ishtirokchi bo‘lmagani uchun mukofot egasiga qaytarildi.",
             parse_mode="HTML",
         )
 
         return True
 
     winner = random.choice(ids)
-
-    winner_row = get_player_by_id(
-        winner
-    )
+    winner_row = get_player_by_id(winner)
 
     if winner_row:
         save_balances(
             winner,
-            diamonds=(
-                winner_row["diamonds"]
-                + change["prize"]
-            ),
+            diamonds=winner_row["diamonds"] + change["prize"],
         )
 
     con = db()
 
     con.execute(
-        """
-        UPDATE changes
-        SET active=0
-        WHERE chat_id=?
-        """,
+        "UPDATE changes SET active=0 WHERE chat_id=?",
         (chat_id,),
     )
 
@@ -1475,13 +1555,10 @@ async def finish_change(
 
 
 # =========================================================
-# YANGI O'YIN
+# O'YIN
 # =========================================================
 
-async def newgame_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def newgame_cmd(update, context):
     if update.effective_chat.type == "private":
         await update.effective_message.reply_text(
             "❌ O‘yin guruhda boshlanadi."
@@ -1489,26 +1566,19 @@ async def newgame_cmd(
         return
 
     chat_id = update.effective_chat.id
-
-    games[chat_id] = new_game(
-        chat_id
-    )
+    games[chat_id] = new_game(chat_id)
 
     await update.effective_message.reply_text(
         "🎭 <b>YANGI MAFIA O‘YINI</b>\n\n"
-        f"👥 Ishtirokchilar: "
-        f"{MIN_PLAYERS}–{MAX_PLAYERS}\n\n"
-        "➕ Qo‘shilish: /join\n"
-        "👥 Ro‘yxat: /players\n"
-        "▶️ Boshlash: /startgame",
+        f"👥 Ishtirokchilar: {MIN_PLAYERS}–{MAX_PLAYERS}\n\n"
+        "➕ /join\n"
+        "👥 /players\n"
+        "▶️ /startgame",
         parse_mode="HTML",
     )
 
 
-async def join_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def join_cmd(update, context):
     if update.effective_chat.type == "private":
         await update.effective_message.reply_text(
             "❌ /join guruhda ishlaydi."
@@ -1518,12 +1588,9 @@ async def join_cmd(
     track_group_user(update)
 
     user = update.effective_user
-
     get_player(user)
 
-    game = game_for(
-        update.effective_chat.id
-    )
+    game = game_for(update.effective_chat.id)
 
     if game["started"]:
         await update.effective_message.reply_text(
@@ -1539,7 +1606,7 @@ async def join_cmd(
 
     if len(game["players"]) >= MAX_PLAYERS:
         await update.effective_message.reply_text(
-            "❌ O‘yinchilar soni limitga yetdi."
+            "❌ Limit to‘lgan."
         )
         return
 
@@ -1557,55 +1624,29 @@ async def join_cmd(
     )
 
 
-async def players_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
+async def players_cmd(update, context):
+    game = game_for(update.effective_chat.id)
 
     lines = []
 
-    for i, p in enumerate(
-        game["players"].values(),
-        1,
-    ):
-        status = (
-            "🟢"
-            if p["alive"]
-            else "💀"
-        )
-
+    for i, p in enumerate(game["players"].values(), 1):
+        status = "🟢" if p["alive"] else "💀"
         lines.append(
             f"{i}. {status} {p['name']}"
         )
 
-    text = (
+    await update.effective_message.reply_text(
         "👥 <b>O‘YINCHILAR</b>\n\n"
         + (
             "\n".join(lines)
             if lines
             else "Hozircha o‘yinchi yo‘q."
-        )
-    )
-
-    await update.effective_message.reply_text(
-        text,
+        ),
         parse_mode="HTML",
     )
 
 
-# =========================================================
-# ROL TAQSIMLASH
-# =========================================================
-
 def build_roles(player_count):
-    """
-    O'yin kichik bo'lsa ham rollar balansliroq
-    bo'lishi uchun asosiy rollar beriladi.
-    """
-
     if player_count == 4:
         base = [
             ("Mafia", "🔪"),
@@ -1655,25 +1696,15 @@ def build_roles(player_count):
         ]
 
     while len(base) < player_count:
-        base.append(
-            ("Fuqaro", "👤")
-        )
+        base.append(("Fuqaro", "👤"))
 
     random.shuffle(base)
 
     return base[:player_count]
 
 
-# =========================================================
-# O'YINNI BOSHLASH
-# =========================================================
-
-async def startgame_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def startgame_cmd(update, context):
     chat_id = update.effective_chat.id
-
     game = game_for(chat_id)
 
     if game["started"]:
@@ -1682,14 +1713,11 @@ async def startgame_cmd(
         )
         return
 
-    player_count = len(
-        game["players"]
-    )
+    player_count = len(game["players"])
 
     if player_count < MIN_PLAYERS:
         await update.effective_message.reply_text(
-            f"❌ Kamida {MIN_PLAYERS} "
-            "o‘yinchi kerak."
+            f"❌ Kamida {MIN_PLAYERS} o‘yinchi kerak."
         )
         return
 
@@ -1697,13 +1725,8 @@ async def startgame_cmd(
     game["phase"] = "night"
     game["night"] = 1
 
-    role_pool = build_roles(
-        player_count
-    )
-
-    players = list(
-        game["players"].values()
-    )
+    role_pool = build_roles(player_count)
+    players = list(game["players"].values())
 
     for i, player in enumerate(players):
         role, emoji = role_pool[i]
@@ -1711,18 +1734,14 @@ async def startgame_cmd(
         player["role"] = role
         player["emoji"] = emoji
 
-        add_stats(
-            player["user_id"],
-            games_count=1,
-        )
+        add_stats(player["user_id"], games_count=1)
 
         try:
             await context.bot.send_message(
                 player["user_id"],
                 "🎭 <b>SIZNING ROLINGIZ</b>\n\n"
                 f"{emoji} <b>{role}</b>\n\n"
-                "Rasmingizni va rolingizni "
-                "boshqalarga oshkor qilmang.",
+                "Rasmingizni va rolingizni oshkor qilmang.",
                 parse_mode="HTML",
             )
         except Exception:
@@ -1733,44 +1752,34 @@ async def startgame_cmd(
         chat_id,
         "night",
         "🌙 <b>TUN BOSHLANDI</b>\n\n"
-        "Shahar jim... Sirlar uyg‘onmoqda.\n"
-        "Tungi vazifalar boshlandi.",
-    )
-
-    await announce(
-        context,
-        chat_id,
-        "🎭 <b>O‘YIN BOSHLANDI!</b>\n\n"
-        "Rollar shaxsiy xabarda yuborildi.\n\n"
-        "Tungi vazifalar boshlandi.",
+        "Shahar jim... Tungi vazifalar boshlandi.",
     )
 
 
-async def role_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
-
-    uid = update.effective_user.id
-
-    if (
-        not game["started"]
-        or uid not in game["players"]
-    ):
-        await update.effective_message.reply_text(
-            "❌ Siz faol o‘yinda emassiz."
-        )
-        return
-
-    player = game["players"][uid]
-
+async def game_cmd(update, context):
     await update.effective_message.reply_text(
-        "🎭 Sizning rolingiz:\n\n"
-        f"{player['emoji']} "
-        f"<b>{player['role']}</b>",
+        "🎮 <b>GAME</b>\n\n"
+        "🎭 Mafia o‘yini:\n"
+        "/newgame — yangi o‘yin\n"
+        "/join — o‘yinga qo‘shilish\n"
+        "/players — o‘yinchilar\n"
+        "/startgame — boshlash\n\n"
+        "🌙 Tungi buyruqlar:\n"
+        "/night\n"
+        "/day\n"
+        "/kill\n"
+        "/heal\n"
+        "/check\n"
+        "/guard\n"
+        "/shoot\n"
+        "/silence\n"
+        "/protect\n"
+        "/shield\n"
+        "/endnight\n\n"
+        "🗳️ Ovoz:\n"
+        "/startvote\n"
+        "/vote\n"
+        "/endvote",
         parse_mode="HTML",
     )
 
@@ -1779,13 +1788,8 @@ async def role_cmd(
 # FAZALAR
 # =========================================================
 
-async def night_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
+async def night_cmd(update, context):
+    game = game_for(update.effective_chat.id)
 
     if not game["started"]:
         await update.effective_message.reply_text(
@@ -1799,18 +1803,12 @@ async def night_cmd(
         context,
         update.effective_chat.id,
         "night",
-        "🌙 <b>TUN</b>\n\n"
-        "Tungi harakatlar boshlandi.",
+        "🌙 <b>TUN</b>\n\nTungi harakatlar boshlandi.",
     )
 
 
-async def day_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
+async def day_cmd(update, context):
+    game = game_for(update.effective_chat.id)
 
     if not game["started"]:
         await update.effective_message.reply_text(
@@ -1829,42 +1827,21 @@ async def day_cmd(
     )
 
 
-# =========================================================
-# O'YINCHI RAQAMINI TOPISH
-# =========================================================
-
-def find_player_by_number(
-    game,
-    value,
-):
+def find_player_by_number(game, value):
     number = parse_int(value)
 
     if number is None:
         return None
 
-    players = list(
-        game["players"].values()
-    )
+    players = list(game["players"].values())
 
-    if (
-        number < 1
-        or number > len(players)
-    ):
+    if number < 1 or number > len(players):
         return None
 
-    return players[
-        number - 1
-    ]["user_id"]
+    return players[number - 1]["user_id"]
 
 
-# =========================================================
-# ACTION
-# =========================================================
-
-def action_allowed(
-    game,
-    user_id,
-):
+def action_allowed(game, user_id):
     return (
         game["started"]
         and game["phase"] == "night"
@@ -1873,12 +1850,7 @@ def action_allowed(
     )
 
 
-def record_action(
-    game,
-    user_id,
-    action,
-    target_id=None,
-):
+def record_action(game, user_id, action, target_id=None):
     game["actions"][user_id] = {
         "action": action,
         "target": target_id,
@@ -1892,28 +1864,18 @@ async def target_action(
     action_name,
     usage_text,
 ):
-    game = game_for(
-        update.effective_chat.id
-    )
-
+    game = game_for(update.effective_chat.id)
     uid = update.effective_user.id
 
-    if not action_allowed(
-        game,
-        uid,
-    ):
+    if not action_allowed(game, uid):
         await update.effective_message.reply_text(
             "❌ Bu harakat hozir mumkin emas."
         )
         return
 
-    if role_of(
-        game,
-        uid,
-    ) not in allowed_roles:
+    if role_of(game, uid) not in allowed_roles:
         await update.effective_message.reply_text(
-            "❌ Sizning rolingizda "
-            "bu harakat yo‘q."
+            "❌ Sizning rolingizda bu harakat yo‘q."
         )
         return
 
@@ -1950,55 +1912,32 @@ async def target_action(
     )
 
 
-# =========================================================
-# QOTIL / MAFIA
-# =========================================================
-
-async def kill_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    allowed = {
-        "Mafia",
-        "Don",
-        "Godfather",
-        "Manyak",
-    }
-
+async def kill_cmd(update, context):
     await target_action(
         update,
         context,
-        allowed,
+        {
+            "Mafia",
+            "Don",
+            "Godfather",
+            "Manyak",
+        },
         "kill",
-        "🔪 /kill O‘YINCHI_RAqAMI",
+        "🔪 /kill O‘YINCHI_RAQAMI",
     )
 
 
-# =========================================================
-# DOKTOR
-# =========================================================
-
-async def heal_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def heal_cmd(update, context):
     await target_action(
         update,
         context,
         {"Doktor"},
         "heal",
-        "💉 /heal O‘YINCHI_RAqAMI",
+        "💉 /heal O‘YINCHI_RAQAMI",
     )
 
 
-# =========================================================
-# TEKSHIRUV
-# =========================================================
-
-async def check_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def check_cmd(update, context):
     await target_action(
         update,
         context,
@@ -2010,71 +1949,41 @@ async def check_cmd(
             "Haker",
         },
         "check",
-        "🔍 /check O‘YINCHI_RAqAMI",
+        "🔍 /check O‘YINCHI_RAQAMI",
     )
 
 
-# =========================================================
-# BODYGUARD
-# =========================================================
-
-async def guard_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def guard_cmd(update, context):
     await target_action(
         update,
         context,
         {"Bodyguard"},
         "guard",
-        "🛡️ /guard O‘YINCHI_RAqAMI",
+        "🛡️ /guard O‘YINCHI_RAQAMI",
     )
 
 
-# =========================================================
-# SNAYPER
-# =========================================================
-
-async def shoot_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def shoot_cmd(update, context):
     await target_action(
         update,
         context,
         {"Snayper"},
         "shoot",
-        "🎯 /shoot O‘YINCHI_RAqAMI",
+        "🎯 /shoot O‘YINCHI_RAQAMI",
     )
 
 
-# =========================================================
-# OVOZ BLOKLASH
-# =========================================================
-
-async def silence_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
-
+async def silence_cmd(update, context):
+    game = game_for(update.effective_chat.id)
     uid = update.effective_user.id
 
-    if not action_allowed(
-        game,
-        uid,
-    ):
+    if not action_allowed(game, uid):
         await update.effective_message.reply_text(
             "❌ Bu harakat hozir mumkin emas."
         )
         return
 
-    role = role_of(
-        game,
-        uid,
-    )
+    role = role_of(game, uid)
 
     has_role_power = role in {
         "Psixolog",
@@ -2083,23 +1992,20 @@ async def silence_cmd(
         "Godfather",
     }
 
-    has_item = (
-        protection_count(
-            uid,
-            "silence",
-        ) > 0
-    )
+    has_item = protection_count(
+        uid,
+        "silence",
+    ) > 0
 
     if not has_role_power and not has_item:
         await update.effective_message.reply_text(
-            "❌ Sizda ovoz bloklash "
-            "imkoniyati yo‘q."
+            "❌ Sizda ovoz bloklash imkoniyati yo‘q."
         )
         return
 
     if not context.args:
         await update.effective_message.reply_text(
-            "🔇 /silence O‘YINCHI_RAqAMI"
+            "🔇 /silence O‘YINCHI_RAQAMI"
         )
         return
 
@@ -2118,15 +2024,9 @@ async def silence_cmd(
         return
 
     if not has_role_power:
-        change_protection(
-            uid,
-            "silence",
-            -1,
-        )
+        change_protection(uid, "silence", -1)
 
-    game["silenced"].add(
-        target
-    )
+    game["silenced"].add(target)
 
     record_action(
         game,
@@ -2141,42 +2041,25 @@ async def silence_cmd(
     )
 
 
-# =========================================================
-# BOSHQA O'YINCHINI HIMOYALASH
-# =========================================================
-
-async def protect_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
-
+async def protect_cmd(update, context):
+    game = game_for(update.effective_chat.id)
     uid = update.effective_user.id
 
-    if not action_allowed(
-        game,
-        uid,
-    ):
+    if not action_allowed(game, uid):
         await update.effective_message.reply_text(
             "❌ Bu harakat hozir mumkin emas."
         )
         return
 
-    if protection_count(
-        uid,
-        "protect_other",
-    ) <= 0:
+    if protection_count(uid, "protect_other") <= 0:
         await update.effective_message.reply_text(
-            "❌ Sizda 🤝 himoyalash "
-            "vositasi yo‘q."
+            "❌ Sizda 🤝 himoyalash vositasi yo‘q."
         )
         return
 
     if not context.args:
         await update.effective_message.reply_text(
-            "🤝 /protect O‘YINCHI_RAqAMI"
+            "🤝 /protect O‘YINCHI_RAQAMI"
         )
         return
 
@@ -2200,9 +2083,7 @@ async def protect_cmd(
         -1,
     )
 
-    game["protected"].add(
-        target
-    )
+    game["protected"].add(target)
 
     record_action(
         game,
@@ -2217,27 +2098,13 @@ async def protect_cmd(
     )
 
 
-# =========================================================
-# SHIELD
-# =========================================================
-
-async def shield_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
-
+async def shield_cmd(update, context):
+    game = game_for(update.effective_chat.id)
     uid = update.effective_user.id
 
-    if not action_allowed(
-        game,
-        uid,
-    ):
+    if not action_allowed(game, uid):
         await update.effective_message.reply_text(
-            "❌ Himoyani faqat tunda "
-            "ishlatish mumkin."
+            "❌ Himoyani faqat tunda ishlatish mumkin."
         )
         return
 
@@ -2250,16 +2117,12 @@ async def shield_cmd(
             "vote",
             "fake_doc",
         )
-        if protection_count(
-            uid,
-            key,
-        ) > 0
+        if protection_count(uid, key) > 0
     ]
 
     if not keys:
         await update.effective_message.reply_text(
-            "❌ Sizda ishlatishga "
-            "tayyor himoya yo‘q."
+            "❌ Sizda ishlatishga tayyor himoya yo‘q."
         )
         return
 
@@ -2267,8 +2130,7 @@ async def shield_cmd(
         await update.effective_message.reply_text(
             "🛡️ Mavjud himoyalar:\n"
             + "\n".join(keys)
-            + "\n\nMasalan:\n"
-            "/shield universal"
+            + "\n\nMasalan:\n/shield universal"
         )
         return
 
@@ -2280,41 +2142,29 @@ async def shield_cmd(
         )
         return
 
-    change_protection(
-        uid,
-        key,
-        -1,
-    )
+    change_protection(uid, key, -1)
 
     if key == "universal":
         game["protected"].add(uid)
-
     elif key == "killer":
         game["killer_protected"].add(uid)
-
     elif key == "poison":
         game["poison_protected"].add(uid)
-
     elif key == "vote":
         game["vote_protected"].add(uid)
-
     elif key == "fake_doc":
         game["fake_doc"].add(uid)
 
     await update.effective_message.reply_text(
-        f"✅ {PROTECTIONS[key][0]} "
-        "ishlatildi."
+        f"✅ {PROTECTIONS[key][0]} ishlatildi."
     )
 
 
 # =========================================================
-# TUNNI YAKUNLASH
+# NIGHT
 # =========================================================
 
-async def endnight_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def endnight_cmd(update, context):
     if update.effective_chat.type == "private":
         return
 
@@ -2324,10 +2174,7 @@ async def endnight_cmd(
     )
 
 
-async def resolve_night(
-    context,
-    chat_id,
-):
+async def resolve_night(context, chat_id):
     game = game_for(chat_id)
 
     if (
@@ -2340,47 +2187,22 @@ async def resolve_night(
         )
         return
 
-    actions = list(
-        game["actions"].items()
-    )
+    actions = list(game["actions"].items())
 
-    healed = set(
-    )
-
-    guards = set(
-        game["protected"]
-    )
-
-    killer_protected = set(
-        game["killer_protected"]
-    )
-
+    healed = set()
+    guards = set(game["protected"])
+    killer_protected = set(game["killer_protected"])
     dead = set()
 
-    # Doctor / Bodyguard
     for uid, action in actions:
-        if (
-            action["action"] == "heal"
-            and action["target"]
-        ):
-            healed.add(
-                action["target"]
-            )
+        if action["action"] == "heal" and action["target"]:
+            healed.add(action["target"])
 
-        elif (
-            action["action"] == "guard"
-            and action["target"]
-        ):
-            guards.add(
-                action["target"]
-            )
+        elif action["action"] == "guard" and action["target"]:
+            guards.add(action["target"])
 
-    # Hujumlar
     for source_uid, action in actions:
-        if action["action"] not in {
-            "kill",
-            "shoot",
-        }:
+        if action["action"] not in {"kill", "shoot"}:
             continue
 
         target = action["target"]
@@ -2391,30 +2213,17 @@ async def resolve_night(
         if target not in alive_players(game):
             continue
 
-        source_role = role_of(
-            game,
-            source_uid,
-        )
+        source_role = role_of(game, source_uid)
 
-        # Doctor / Bodyguard
-        if target in healed:
+        if target in healed or target in guards:
             continue
 
-        if target in guards:
-            continue
-
-        # Qotilga qarshi himoya
         if (
             source_role == "Manyak"
             and target in killer_protected
         ):
             continue
 
-        # Universal himoya:
-        # Mafia / Godfather / Manyak hujumidan
-        # himoya qiladi.
-        #
-        # Don hujumi universalni chetlab o'tadi.
         if (
             target in game["protected"]
             and source_role in {
@@ -2427,11 +2236,9 @@ async def resolve_night(
 
         dead.add(target)
 
-    # O'lganlarni belgilash
     for uid in dead:
         game["players"][uid]["alive"] = False
 
-    # Tekshiruvlar
     for source_uid, action in actions:
         if (
             action["action"] != "check"
@@ -2440,17 +2247,11 @@ async def resolve_night(
             continue
 
         target = action["target"]
-
-        actual_role = role_of(
-            game,
-            target,
-        )
+        actual_role = role_of(game, target)
 
         if target in game["fake_doc"]:
             shown_role = "Fuqaro"
-            game["fake_doc"].discard(
-                target
-            )
+            game["fake_doc"].discard(target)
         else:
             shown_role = actual_role
 
@@ -2458,8 +2259,7 @@ async def resolve_night(
             await context.bot.send_message(
                 source_uid,
                 "🔍 <b>TEKSHIRUV NATIJASI</b>\n\n"
-                f"{mention(target)} → "
-                f"<b>{shown_role}</b>",
+                f"{mention(target)} → <b>{shown_role}</b>",
                 parse_mode="HTML",
             )
         except Exception:
@@ -2477,7 +2277,6 @@ async def resolve_night(
             "💀 <b>TUN NATIJASI</b>\n\n"
             f"Halok bo‘lganlar:\n<b>{names}</b>",
         )
-
     else:
         await announce(
             context,
@@ -2494,10 +2293,7 @@ async def resolve_night(
     game["phase"] = "day"
     game["night"] += 1
 
-    if await check_winner(
-        context,
-        chat_id,
-    ):
+    if await check_winner(context, chat_id):
         return
 
     await send_phase_image(
@@ -2510,16 +2306,11 @@ async def resolve_night(
 
 
 # =========================================================
-# OVOZ BERISH
+# VOTE
 # =========================================================
 
-async def startvote_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
+async def startvote_cmd(update, context):
+    game = game_for(update.effective_chat.id)
 
     if not game["started"]:
         await update.effective_message.reply_text(
@@ -2535,22 +2326,13 @@ async def startvote_cmd(
         update.effective_chat.id,
         "vote",
         "🗳️ <b>OVOZ BERISH BOSHLANDI</b>\n\n"
-        "Kim qoladi? Kim ketadi?\n\n"
-        "Ovoz berish:\n"
-        "/vote O‘YINCHI_RAqAMI\n\n"
-        "Tugatish:\n"
+        "/vote O‘YINCHI_RAQAMI\n\n"
         "/endvote",
     )
 
 
-async def vote_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    game = game_for(
-        update.effective_chat.id
-    )
-
+async def vote_cmd(update, context):
+    game = game_for(update.effective_chat.id)
     uid = update.effective_user.id
 
     if (
@@ -2579,7 +2361,7 @@ async def vote_cmd(
 
     if not context.args:
         await update.effective_message.reply_text(
-            "🗳️ /vote O‘YINCHI_RAqAMI"
+            "🗳️ /vote O‘YINCHI_RAQAMI"
         )
         return
 
@@ -2606,12 +2388,8 @@ async def vote_cmd(
     )
 
 
-async def endvote_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def endvote_cmd(update, context):
     chat_id = update.effective_chat.id
-
     game = game_for(chat_id)
 
     if (
@@ -2634,13 +2412,9 @@ async def endvote_cmd(
     counts = {}
 
     for target in votes.values():
-        counts[target] = (
-            counts.get(target, 0) + 1
-        )
+        counts[target] = counts.get(target, 0) + 1
 
-    max_votes = max(
-        counts.values()
-    )
+    max_votes = max(counts.values())
 
     candidates = [
         uid
@@ -2648,23 +2422,17 @@ async def endvote_cmd(
         if count == max_votes
     ]
 
-    target = random.choice(
-        candidates
-    )
+    target = random.choice(candidates)
 
     if target in game["vote_protected"]:
-        game["vote_protected"].discard(
-            target
-        )
+        game["vote_protected"].discard(target)
 
         await announce(
             context,
             chat_id,
             "🛡️ <b>OVOZ HIMOYASI ISHLADI!</b>\n\n"
-            f"{mention(target)} "
-            "ovoz orqali chiqarilmadi.",
+            f"{mention(target)} chiqarilmadi.",
         )
-
     else:
         game["players"][target]["alive"] = False
 
@@ -2678,10 +2446,7 @@ async def endvote_cmd(
 
     game["votes"] = {}
 
-    if await check_winner(
-        context,
-        chat_id,
-    ):
+    if await check_winner(context, chat_id):
         return
 
     game["phase"] = "night"
@@ -2697,28 +2462,19 @@ async def endvote_cmd(
 
 
 # =========================================================
-# G'ALABA TEKSHIRISH
+# WIN
 # =========================================================
 
-async def check_winner(
-    context,
-    chat_id,
-):
+async def check_winner(context, chat_id):
     game = game_for(chat_id)
 
     if not game["started"]:
         return False
 
-    alive = alive_players(
-        game
-    )
+    alive = alive_players(game)
 
     if not alive:
-        await finish_game(
-            context,
-            chat_id,
-            "Hech kim",
-        )
+        await finish_game(context, chat_id, "Hech kim")
         return True
 
     mafia = sum(
@@ -2737,49 +2493,25 @@ async def check_winner(
         if player["role"] == "Manyak"
     )
 
-    others = (
-        len(alive)
-        - mafia
-        - maniac
-    )
+    others = len(alive) - mafia - maniac
 
     winner = None
 
-    if (
-        maniac > 0
-        and len(alive) == 1
-    ):
+    if maniac > 0 and len(alive) == 1:
         winner = "Manyak"
-
-    elif (
-        mafia >= others + maniac
-        and mafia > 0
-    ):
+    elif mafia >= others + maniac and mafia > 0:
         winner = "Mafia"
-
-    elif (
-        mafia == 0
-        and maniac == 0
-    ):
+    elif mafia == 0 and maniac == 0:
         winner = "Fuqarolar"
 
     if winner:
-        await finish_game(
-            context,
-            chat_id,
-            winner,
-        )
-
+        await finish_game(context, chat_id, winner)
         return True
 
     return False
 
 
-async def finish_game(
-    context,
-    chat_id,
-    winner_side,
-):
+async def finish_game(context, chat_id, winner_side):
     game = game_for(chat_id)
 
     if not game["started"]:
@@ -2788,9 +2520,7 @@ async def finish_game(
     winners = []
 
     for uid, player in game["players"].items():
-
         role = player["role"]
-
         won = False
 
         if (
@@ -2803,10 +2533,7 @@ async def finish_game(
         ):
             won = True
 
-        elif (
-            winner_side == "Manyak"
-            and role == "Manyak"
-        ):
+        elif winner_side == "Manyak" and role == "Manyak":
             won = True
 
         elif (
@@ -2823,9 +2550,7 @@ async def finish_game(
         if won:
             winners.append(uid)
 
-            row = get_player_by_id(
-                uid
-            )
+            row = get_player_by_id(uid)
 
             if row:
                 save_balances(
@@ -2833,10 +2558,7 @@ async def finish_game(
                     dollars=row["dollars"] + 20,
                 )
 
-            points = ROLE_POINTS.get(
-                role,
-                50,
-            )
+            points = ROLE_POINTS.get(role, 50)
 
             add_points(
                 uid,
@@ -2844,10 +2566,7 @@ async def finish_game(
                 f"G‘alaba: {role}",
             )
 
-            add_stats(
-                uid,
-                wins=1,
-            )
+            add_stats(uid, wins=1)
 
     game["started"] = False
     game["phase"] = "finished"
@@ -2856,30 +2575,25 @@ async def finish_game(
 
     for uid in winners:
         role = game["players"][uid]["role"]
-        points = ROLE_POINTS.get(
-            role,
-            50,
-        )
+        points = ROLE_POINTS.get(role, 50)
 
         winner_lines.append(
-            f"🏆 {game['players'][uid]['name']}"
-            f" — +$20, +{points} ball"
+            f"🏆 {game['players'][uid]['name']} "
+            f"— +$20, +{points} ball"
         )
 
-    if winner_lines:
-        result = "\n".join(
-            winner_lines
-        )
-    else:
-        result = "G‘olib topilmadi."
+    result = (
+        "\n".join(winner_lines)
+        if winner_lines
+        else "G‘olib topilmadi."
+    )
 
     await send_phase_image(
         context,
         chat_id,
         "win",
         "🏆 <b>G‘ALABA!</b>\n\n"
-        f"👑 G‘olib tomon: "
-        f"<b>{winner_side}</b>\n\n"
+        f"👑 G‘olib tomon: <b>{winner_side}</b>\n\n"
         f"{result}",
     )
 
@@ -2896,54 +2610,35 @@ def top_rows(start_dt):
         SELECT
             p.user_id,
             p.name,
-            COALESCE(
-                SUM(e.points),
-                0
-            ) AS pts
+            COALESCE(SUM(e.points),0) AS pts
         FROM point_events e
-        JOIN players p
-            ON p.user_id=e.user_id
+        JOIN players p ON p.user_id=e.user_id
         WHERE e.created_at>=?
         GROUP BY p.user_id
         ORDER BY pts DESC
         LIMIT 10
         """,
         (
-            start_dt.isoformat(
-                timespec="seconds"
-            ),
+            start_dt.isoformat(timespec="seconds"),
         ),
     ).fetchall()
 
     con.close()
-
     return rows
 
 
-async def send_top(
-    update,
-    rows,
-    title,
-):
+async def send_top(update, rows, title):
     if not rows:
         await update.effective_message.reply_text(
-            f"{title}\n\n"
-            "Hozircha natijalar yo‘q."
+            f"{title}\n\nHozircha natijalar yo‘q."
         )
         return
 
-    lines = [
-        title,
-        "",
-    ]
+    lines = [title, ""]
 
-    for i, row in enumerate(
-        rows,
-        1,
-    ):
+    for i, row in enumerate(rows, 1):
         lines.append(
-            f"{i}. {row['name']} — "
-            f"⭐ {row['pts']}"
+            f"{i}. {row['name']} — ⭐ {row['pts']}"
         )
 
     await update.effective_message.reply_text(
@@ -2951,10 +2646,7 @@ async def send_top(
     )
 
 
-async def top_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def top_cmd(update, context):
     now = datetime.utcnow()
 
     start = datetime(
@@ -2970,10 +2662,7 @@ async def top_cmd(
     )
 
 
-async def top1_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def top1_cmd(update, context):
     now = datetime.utcnow()
 
     start = datetime(
@@ -2989,14 +2678,8 @@ async def top1_cmd(
     )
 
 
-async def top7_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    start = (
-        datetime.utcnow()
-        - timedelta(days=7)
-    )
+async def top7_cmd(update, context):
+    start = datetime.utcnow() - timedelta(days=7)
 
     await send_top(
         update,
@@ -3006,21 +2689,10 @@ async def top7_cmd(
 
 
 # =========================================================
-# ADMIN: ADD ADMIN
+# ADMIN
 # =========================================================
 
-async def addadmin_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(
-        update.effective_user.id
-    ):
-        await update.effective_message.reply_text(
-            "⛔ Faqat owner."
-        )
-        return
-
+def admin_target(update, context):
     target_id = (
         parse_int(context.args[0])
         if context.args
@@ -3029,6 +2701,7 @@ async def addadmin_cmd(
 
     if (
         target_id is None
+        and update.message
         and update.message.reply_to_message
     ):
         target_id = (
@@ -3038,20 +2711,28 @@ async def addadmin_cmd(
             .id
         )
 
+    return target_id
+
+
+async def addadmin_cmd(update, context):
+    if not is_owner(update.effective_user.id):
+        await update.effective_message.reply_text(
+            "⛔ Faqat owner."
+        )
+        return
+
+    target_id = admin_target(update, context)
+
     if not target_id:
         await update.effective_message.reply_text(
-            "/addadmin TELEGRAM_ID\n"
-            "yoki reply qiling."
+            "/addadmin TELEGRAM_ID yoki reply"
         )
         return
 
     con = db()
 
     con.execute(
-        """
-        INSERT OR IGNORE INTO admins(user_id)
-        VALUES(?)
-        """,
+        "INSERT OR IGNORE INTO admins(user_id) VALUES(?)",
         (target_id,),
     )
 
@@ -3061,44 +2742,19 @@ async def addadmin_cmd(
     admins.add(target_id)
 
     await update.effective_message.reply_text(
-        "✅ Admin qo‘shildi:\n"
-        f"<code>{target_id}</code>",
+        f"✅ Admin qo‘shildi:\n<code>{target_id}</code>",
         parse_mode="HTML",
     )
 
 
-# =========================================================
-# ADMIN: DELETE ADMIN
-# =========================================================
-
-async def deladmin_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_owner(
-        update.effective_user.id
-    ):
+async def deladmin_cmd(update, context):
+    if not is_owner(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Faqat owner."
         )
         return
 
-    target_id = (
-        parse_int(context.args[0])
-        if context.args
-        else None
-    )
-
-    if (
-        not target_id
-        and update.message.reply_to_message
-    ):
-        target_id = (
-            update.message
-            .reply_to_message
-            .from_user
-            .id
-        )
+    target_id = admin_target(update, context)
 
     if not target_id:
         await update.effective_message.reply_text(
@@ -3116,47 +2772,21 @@ async def deladmin_cmd(
     con.commit()
     con.close()
 
-    admins.discard(
-        target_id
-    )
+    admins.discard(target_id)
 
     await update.effective_message.reply_text(
         "✅ Admin olib tashlandi."
     )
 
 
-# =========================================================
-# ADMIN: BAN
-# =========================================================
-
-async def ban_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_admin(
-        update.effective_user.id
-    ):
+async def ban_cmd(update, context):
+    if not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Admin huquqi kerak."
         )
         return
 
-    target_id = (
-        parse_int(context.args[0])
-        if context.args
-        else None
-    )
-
-    if (
-        not target_id
-        and update.message.reply_to_message
-    ):
-        target_id = (
-            update.message
-            .reply_to_message
-            .from_user
-            .id
-        )
+    target_id = admin_target(update, context)
 
     if not target_id:
         await update.effective_message.reply_text(
@@ -3167,11 +2797,7 @@ async def ban_cmd(
     con = db()
 
     con.execute(
-        """
-        UPDATE players
-        SET banned=1
-        WHERE user_id=?
-        """,
+        "UPDATE players SET banned=1 WHERE user_id=?",
         (target_id,),
     )
 
@@ -3183,38 +2809,14 @@ async def ban_cmd(
     )
 
 
-# =========================================================
-# ADMIN: UNBAN
-# =========================================================
-
-async def unban_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_admin(
-        update.effective_user.id
-    ):
+async def unban_cmd(update, context):
+    if not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Admin huquqi kerak."
         )
         return
 
-    target_id = (
-        parse_int(context.args[0])
-        if context.args
-        else None
-    )
-
-    if (
-        not target_id
-        and update.message.reply_to_message
-    ):
-        target_id = (
-            update.message
-            .reply_to_message
-            .from_user
-            .id
-        )
+    target_id = admin_target(update, context)
 
     if not target_id:
         await update.effective_message.reply_text(
@@ -3225,11 +2827,7 @@ async def unban_cmd(
     con = db()
 
     con.execute(
-        """
-        UPDATE players
-        SET banned=0
-        WHERE user_id=?
-        """,
+        "UPDATE players SET banned=0 WHERE user_id=?",
         (target_id,),
     )
 
@@ -3241,38 +2839,14 @@ async def unban_cmd(
     )
 
 
-# =========================================================
-# ADMIN: BANKROT
-# =========================================================
-
-async def bankrot_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_admin(
-        update.effective_user.id
-    ):
+async def bankrot_cmd(update, context):
+    if not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Admin huquqi kerak."
         )
         return
 
-    target_id = (
-        parse_int(context.args[0])
-        if context.args
-        else None
-    )
-
-    if (
-        not target_id
-        and update.message.reply_to_message
-    ):
-        target_id = (
-            update.message
-            .reply_to_message
-            .from_user
-            .id
-        )
+    target_id = admin_target(update, context)
 
     if not target_id:
         await update.effective_message.reply_text(
@@ -3285,9 +2859,7 @@ async def bankrot_cmd(
     con.execute(
         """
         UPDATE players
-        SET money=0,
-            dollars=0,
-            diamonds=0
+        SET money=0, dollars=0, diamonds=0
         WHERE user_id=?
         """,
         (target_id,),
@@ -3297,22 +2869,12 @@ async def bankrot_cmd(
     con.close()
 
     await update.effective_message.reply_text(
-        "💸 O‘yinchining barcha "
-        "balanslari 0 qilindi."
+        "💸 O‘yinchining barcha balanslari 0 qilindi."
     )
 
 
-# =========================================================
-# ADMIN: BALANS
-# =========================================================
-
-async def give_admin_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_admin(
-        update.effective_user.id
-    ):
+async def give_admin_cmd(update, context):
+    if not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Admin huquqi kerak."
         )
@@ -3325,18 +2887,9 @@ async def give_admin_cmd(
         )
         return
 
-    target_id = parse_int(
-        context.args[0]
-    )
-
-    kind = (
-        context.args[1]
-        .lower()
-    )
-
-    amount = parse_int(
-        context.args[2]
-    )
+    target_id = parse_int(context.args[0])
+    kind = context.args[1].lower()
+    amount = parse_int(context.args[2])
 
     if (
         not target_id
@@ -3353,9 +2906,7 @@ async def give_admin_cmd(
         )
         return
 
-    row = get_player_by_id(
-        target_id
-    )
+    row = get_player_by_id(target_id)
 
     if not row:
         await update.effective_message.reply_text(
@@ -3365,9 +2916,7 @@ async def give_admin_cmd(
 
     save_balances(
         target_id,
-        **{
-            kind: amount
-        },
+        **{kind: amount},
     )
 
     await update.effective_message.reply_text(
@@ -3375,25 +2924,14 @@ async def give_admin_cmd(
     )
 
 
-# =========================================================
-# ADMIN: ROLLARNI KO'RISH
-# =========================================================
-
-async def who_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
-    if not is_admin(
-        update.effective_user.id
-    ):
+async def who_cmd(update, context):
+    if not is_admin(update.effective_user.id):
         await update.effective_message.reply_text(
             "⛔ Admin huquqi kerak."
         )
         return
 
-    game = game_for(
-        update.effective_chat.id
-    )
+    game = game_for(update.effective_chat.id)
 
     if not game["players"]:
         await update.effective_message.reply_text(
@@ -3409,8 +2947,7 @@ async def who_cmd(
     ):
         lines.append(
             f"{i}. {player['name']} — "
-            f"{player['emoji']} "
-            f"{player['role']}"
+            f"{player['emoji']} {player['role']}"
         )
 
     await update.effective_message.reply_text(
@@ -3421,61 +2958,59 @@ async def who_cmd(
 
 
 # =========================================================
-# CALLBACKLAR
+# CALLBACKS
 # =========================================================
 
-async def callbacks(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def callbacks(update, context):
     query = update.callback_query
 
     await query.answer()
 
     uid = query.from_user.id
-
-    get_player(
-        query.from_user
-    )
+    get_player(query.from_user)
 
     data = query.data or ""
 
-    # PROFIL
-    if data == "back_profile":
-        row = get_player_by_id(
-            uid
+    # PARA
+    if data.startswith("para_accept:") or data.startswith(
+        "para_reject:"
+    ):
+        await para_callback(
+            query,
+            context,
+            data,
         )
+        return
+
+    # PROFILE
+    if data == "back_profile":
+        row = get_player_by_id(uid)
+
+        if not row:
+            return
 
         await query.edit_message_text(
             profile_text(row),
             parse_mode="HTML",
             reply_markup=profile_keyboard(),
         )
-
         return
 
-    # ALMAZ SHOP
+    # SHOP
     if data == "shop_diamonds":
-        row = get_player_by_id(
-            uid
-        )
+        row = get_player_by_id(uid)
 
         await query.edit_message_text(
             "💎 <b>ALMAZ DO‘KONI</b>\n\n"
             "1 💎 = 500 💰\n\n"
-            f"Sizning pulingiz: "
-            f"<b>{row['money']:,}</b> 💰",
+            f"Sizning pulingiz: <b>{row['money']:,}</b> 💰",
             parse_mode="HTML",
             reply_markup=diamond_shop_keyboard(),
         )
-
         return
 
-    # ALMAZ SOTIB OLISH
     if data.startswith("buydia:"):
-        amount = parse_int(
-            data.split(":", 1)[1]
-        )
+        amount = parse_int(data.split(":", 1)[1])
 
         prices = {
             1: 500,
@@ -3487,10 +3022,7 @@ async def callbacks(
         if amount not in prices:
             return
 
-        row = get_player_by_id(
-            uid
-        )
-
+        row = get_player_by_id(uid)
         price = prices[amount]
 
         if row["money"] < price:
@@ -3506,24 +3038,19 @@ async def callbacks(
             diamonds=row["diamonds"] + amount,
         )
 
-        row = get_player_by_id(
-            uid
-        )
+        row = get_player_by_id(uid)
 
         await query.edit_message_text(
             "✅ <b>XARID MUVAFFAQIYATLI</b>\n\n"
             f"💎 +{amount}\n"
             f"💰 -{price:,}\n\n"
-            f"Yangi balans:\n"
             f"💎 {row['diamonds']}\n"
             f"💰 {row['money']:,}",
             parse_mode="HTML",
             reply_markup=diamond_shop_keyboard(),
         )
-
         return
 
-    # ALMAZ YUBORISH
     if data == "gift_diamond":
         pending_inputs[uid] = {
             "type": "gift_target"
@@ -3534,62 +3061,44 @@ async def callbacks(
             "<b>Telegram ID</b>ni yuboring.",
             parse_mode="HTML",
         )
-
         return
 
-    # HIMOYA MARKAZI
+    # PROTECTION
     if data == "protection_menu":
         await query.edit_message_text(
             protection_text(uid),
             parse_mode="HTML",
             reply_markup=protection_keyboard(),
         )
-
         return
 
-    # HIMOYA DETALI
     if data.startswith("prot:"):
-        key = data.split(
-            ":",
-            1,
-        )[1]
+        key = data.split(":", 1)[1]
 
         if key not in PROTECTIONS:
             return
 
         await query.edit_message_text(
-            protection_detail(
-                uid,
-                key,
-            ),
+            protection_detail(uid, key),
             parse_mode="HTML",
-            reply_markup=protection_detail_keyboard(
-                key
-            ),
+            reply_markup=protection_detail_keyboard(key),
         )
-
         return
 
-    # HIMOYA SOTIB OLISH
     if data.startswith("buyprot:"):
-        key = data.split(
-            ":",
-            1,
-        )[1]
+        key = data.split(":", 1)[1]
 
         if key not in PROTECTIONS:
             return
 
         price_text = PROTECTIONS[key][1]
+        row = get_player_by_id(uid)
 
-        row = get_player_by_id(
-            uid
+        currency = (
+            "diamonds"
+            if "💎" in price_text
+            else "money"
         )
-
-        if "💎" in price_text:
-            currency = "diamonds"
-        else:
-            currency = "money"
 
         amount = parse_int(
             price_text
@@ -3611,32 +3120,21 @@ async def callbacks(
         save_balances(
             uid,
             **{
-                currency:
-                    row[currency] - amount
+                currency: row[currency] - amount
             },
         )
 
-        change_protection(
-            uid,
-            key,
-            1,
-        )
+        change_protection(uid, key, 1)
 
         await query.edit_message_text(
             "✅ <b>SOTIB OLINDI</b>\n\n"
-            + protection_detail(
-                uid,
-                key,
-            ),
+            + protection_detail(uid, key),
             parse_mode="HTML",
-            reply_markup=protection_detail_keyboard(
-                key
-            ),
+            reply_markup=protection_detail_keyboard(key),
         )
-
         return
 
-    # CHANGE QATNASHISH
+    # CHANGE JOIN
     if data == "change_join":
         chat_id = query.message.chat.id
 
@@ -3650,10 +3148,8 @@ async def callbacks(
 
             change = con.execute(
                 """
-                SELECT *
-                FROM changes
-                WHERE chat_id=?
-                AND active=1
+                SELECT * FROM changes
+                WHERE chat_id=? AND active=1
                 """,
                 (chat_id,),
             ).fetchone()
@@ -3665,26 +3161,19 @@ async def callbacks(
                     "Faol change yo‘q.",
                     show_alert=True,
                 )
-
                 return
 
             exists = con.execute(
                 """
-                SELECT 1
-                FROM change_participants
-                WHERE chat_id=?
-                AND user_id=?
+                SELECT 1 FROM change_participants
+                WHERE chat_id=? AND user_id=?
                 """,
-                (
-                    chat_id,
-                    uid,
-                ),
+                (chat_id, uid),
             ).fetchone()
 
             count = con.execute(
                 """
-                SELECT COUNT(*)
-                FROM change_participants
+                SELECT COUNT(*) FROM change_participants
                 WHERE chat_id=?
                 """,
                 (chat_id,),
@@ -3697,7 +3186,6 @@ async def callbacks(
                     "Siz allaqachon qatnashgansiz.",
                     show_alert=True,
                 )
-
                 return
 
             if count >= CHANGE_MAX:
@@ -3707,25 +3195,18 @@ async def callbacks(
                     "Limit to‘lgan.",
                     show_alert=True,
                 )
-
                 return
 
-            get_player(
-                query.from_user
-            )
+            get_player(query.from_user)
 
             con.execute(
                 """
                 INSERT INTO change_participants(
-                    chat_id,
-                    user_id
+                    chat_id, user_id
                 )
                 VALUES(?,?)
                 """,
-                (
-                    chat_id,
-                    uid,
-                ),
+                (chat_id, uid),
             )
 
             con.commit()
@@ -3734,8 +3215,7 @@ async def callbacks(
             new_count = count + 1
 
             await query.answer(
-                f"Qatnashdingiz! "
-                f"{new_count}/{CHANGE_MAX}"
+                f"Qatnashdingiz! {new_count}/{CHANGE_MAX}"
             )
 
             if new_count >= CHANGE_MAX:
@@ -3745,13 +3225,11 @@ async def callbacks(
                 )
 
         finally:
-            change_locks.discard(
-                chat_id
-            )
+            change_locks.discard(chat_id)
 
         return
 
-    # CHANGE YAKUNLASH
+    # CHANGE END
     if data == "change_end":
         chat_id = query.message.chat.id
 
@@ -3759,10 +3237,8 @@ async def callbacks(
 
         change = con.execute(
             """
-            SELECT *
-            FROM changes
-            WHERE chat_id=?
-            AND active=1
+            SELECT * FROM changes
+            WHERE chat_id=? AND active=1
             """,
             (chat_id,),
         ).fetchone()
@@ -3781,75 +3257,177 @@ async def callbacks(
             and not is_admin(uid)
         ):
             await query.answer(
-                "Faqat yaratgan odam "
-                "yoki admin yakunlaydi.",
+                "Faqat yaratgan odam yoki admin yakunlaydi.",
                 show_alert=True,
             )
             return
 
-        await finish_change(
-            context,
-            chat_id,
-        )
-
+        await finish_change(context, chat_id)
         return
+
+
+# =========================================================
+# DIAMOND SHOP HELPERS
+# =========================================================
+
+def diamond_shop_keyboard():
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "💎1 — 500 💰",
+                    callback_data="buydia:1",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💎5 — 2 500 💰",
+                    callback_data="buydia:5",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💎10 — 5 000 💰",
+                    callback_data="buydia:10",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "💎20 — 10 000 💰",
+                    callback_data="buydia:20",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬅️ Profil",
+                    callback_data="back_profile",
+                )
+            ],
+        ]
+    )
+
+
+def protection_keyboard():
+    keys = list(PROTECTIONS.keys())
+    rows = []
+
+    for i in range(0, len(keys), 2):
+        row = []
+
+        for key in keys[i:i + 2]:
+            row.append(
+                InlineKeyboardButton(
+                    PROTECTIONS[key][0],
+                    callback_data=f"prot:{key}",
+                )
+            )
+
+        rows.append(row)
+
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "⬅️ Profil",
+                callback_data="back_profile",
+            )
+        ]
+    )
+
+    return InlineKeyboardMarkup(rows)
+
+
+def protection_text(user_id):
+    lines = [
+        "🛡️ <b>HIMOYA MARKAZI</b>",
+        "",
+    ]
+
+    for key, (name, price, desc) in PROTECTIONS.items():
+        lines.append(
+            f"{name} — <b>{price}</b>"
+        )
+        lines.append(
+            f"📦 Mavjud: <b>{protection_count(user_id, key)}</b>"
+        )
+        lines.append(
+            f"↳ {desc}"
+        )
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def protection_detail(user_id, key):
+    name, price, desc = PROTECTIONS[key]
+    count = protection_count(user_id, key)
+
+    return (
+        f"{name}\n\n"
+        f"💳 Narxi: <b>{price}</b>\n"
+        f"📦 Sizda: <b>{count}</b>\n\n"
+        f"ℹ️ {desc}"
+    )
+
+
+def protection_detail_keyboard(key):
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "🛒 Sotib olish",
+                    callback_data=f"buyprot:{key}",
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "⬅️ Himoya markazi",
+                    callback_data="protection_menu",
+                )
+            ],
+        ]
+    )
 
 
 # =========================================================
 # HELP
 # =========================================================
 
-async def help_cmd(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def help_cmd(update, context):
     text = (
-        "📚 <b>MAFIA BOT BUYRUQLARI</b>\n\n"
+        "📚 <b>MAFIA BOT</b>\n\n"
 
         "👤 <b>PROFIL</b>\n"
-        "/profil — profil\n"
-        "/money 5000 — reply orqali pul\n"
-        "/give 1 — reply orqali almaz\n"
-        "/change 100 — sovrinli change\n\n"
+        "/profile — guruhda profil\n"
+        "/roles — rollar\n"
+        "/help — yordam\n\n"
 
-        "🎭 <b>O‘YIN</b>\n"
-        "/newgame — yangi o‘yin\n"
-        "/join — qo‘shilish\n"
-        "/players — o‘yinchilar\n"
-        "/startgame — boshlash\n"
-        "/role — o‘z rolingiz\n"
-        "/night — tun\n"
-        "/day — kun\n\n"
+        "❤️ <b>PARA</b>\n"
+        "/para — para so‘rovi\n"
+        "/mypara — haqiqiy parangiz\n\n"
 
-        "🌙 <b>TUNGI HARAKATLAR</b>\n"
-        "/kill raqam\n"
-        "/heal raqam\n"
-        "/check raqam\n"
-        "/guard raqam\n"
-        "/shoot raqam\n"
-        "/silence raqam\n"
-        "/protect raqam\n"
-        "/shield universal\n"
+        "🎮 <b>GAME</b>\n"
+        "/game — game buyruqlari\n"
+        "/newgame\n"
+        "/join\n"
+        "/players\n"
+        "/startgame\n"
+        "/night\n"
+        "/day\n"
         "/endnight\n\n"
 
         "🗳️ <b>OVOZ</b>\n"
         "/startvote\n"
-        "/vote raqam\n"
+        "/vote\n"
         "/endvote\n\n"
 
-        "🏆 <b>REYTING</b>\n"
-        "/top — oylik\n"
-        "/top1 — bugungi\n"
-        "/top7 — 7 kunlik\n\n"
+        "💎 <b>IQTISOD</b>\n"
+        "/give\n"
+        "/change\n\n"
 
-        "🔐 <b>ADMIN</b>\n"
-        "/addadmin\n"
-        "/deladmin\n"
-        "/ban\n"
-        "/unban\n"
-        "/bankrot\n"
-        "/giveadmin\n"
-        "/who"
+        "🏆 <b>TOP</b>\n"
+        "/top\n"
+        "/top1\n"
+        "/top7"
     )
 
     await update.effective_message.reply_text(
@@ -3862,18 +3440,11 @@ async def help_cmd(
 # MESSAGE TRACKER
 # =========================================================
 
-async def message_tracker(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-):
+async def message_tracker(update, context):
     if update.effective_user:
-        get_player(
-            update.effective_user
-        )
+        get_player(update.effective_user)
 
-    track_group_user(
-        update
-    )
+    track_group_user(update)
 
     if (
         update.effective_chat
@@ -3888,97 +3459,55 @@ async def message_tracker(
 
 
 # =========================================================
-# BOT COMMANDS
+# BOT MENYULARI
 # =========================================================
 
-async def post_init(
-    application: Application,
-):
-    commands = [
-        BotCommand(
-            "start",
-            "Botni boshlash",
-        ),
-        BotCommand(
-            "profil",
-            "Profil",
-        ),
-        BotCommand(
-            "help",
-            "Yordam",
-        ),
-        BotCommand(
-            "newgame",
-            "Yangi o‘yin",
-        ),
-        BotCommand(
-            "join",
-            "O‘yinga qo‘shilish",
-        ),
-        BotCommand(
-            "players",
-            "O‘yinchilar",
-        ),
-        BotCommand(
-            "startgame",
-            "O‘yinni boshlash",
-        ),
-        BotCommand(
-            "role",
-            "Rolim",
-        ),
-        BotCommand(
-            "night",
-            "Tun",
-        ),
-        BotCommand(
-            "day",
-            "Kun",
-        ),
-        BotCommand(
-            "startvote",
-            "Ovoz berish",
-        ),
-        BotCommand(
-            "vote",
-            "Ovoz",
-        ),
-        BotCommand(
-            "endvote",
-            "Ovozni yakunlash",
-        ),
-        BotCommand(
-            "endnight",
-            "Tunni yakunlash",
-        ),
-        BotCommand(
-            "money",
-            "Pul yuborish",
-        ),
-        BotCommand(
-            "give",
-            "Almaz yuborish",
-        ),
-        BotCommand(
-            "change",
-            "Sovrinli change",
-        ),
-        BotCommand(
-            "top",
-            "Oylik top",
-        ),
-        BotCommand(
-            "top1",
-            "Bugungi top",
-        ),
-        BotCommand(
-            "top7",
-            "7 kunlik top",
-        ),
+async def post_init(application):
+    private_commands = [
+        BotCommand("start", "Botni boshlash"),
+        BotCommand("roles", "O‘yin rollari"),
+        BotCommand("help", "Yordam"),
+    ]
+
+    group_commands = [
+        BotCommand("start", "Botni boshlash"),
+        BotCommand("profile", "Profil"),
+        BotCommand("roles", "O‘yin rollari"),
+        BotCommand("help", "Yordam"),
+
+        BotCommand("game", "Game"),
+        BotCommand("newgame", "Yangi o‘yin"),
+        BotCommand("join", "O‘yinga qo‘shilish"),
+        BotCommand("players", "O‘yinchilar"),
+        BotCommand("startgame", "O‘yinni boshlash"),
+
+        BotCommand("night", "Tun"),
+        BotCommand("day", "Kun"),
+        BotCommand("endnight", "Tunni yakunlash"),
+
+        BotCommand("startvote", "Ovoz berishni boshlash"),
+        BotCommand("vote", "Ovoz berish"),
+        BotCommand("endvote", "Ovozni yakunlash"),
+
+        BotCommand("para", "Para so‘rovi"),
+        BotCommand("mypara", "Haqiqiy para"),
+
+        BotCommand("give", "Almaz yuborish"),
+        BotCommand("change", "Sovrinli change"),
+
+        BotCommand("top", "Oylik TOP"),
+        BotCommand("top1", "Bugungi TOP"),
+        BotCommand("top7", "7 kunlik TOP"),
     ]
 
     await application.bot.set_my_commands(
-        commands
+        private_commands,
+        scope=BotCommandScopeAllPrivateChats(),
+    )
+
+    await application.bot.set_my_commands(
+        group_commands,
+        scope=BotCommandScopeAllGroupChats(),
     )
 
 
@@ -3995,280 +3524,172 @@ def build_application():
         .build()
     )
 
-    # Asosiy
+    # ASOSIY
     application.add_handler(
-        CommandHandler(
-            "start",
-            start,
-        )
+        CommandHandler("start", start)
     )
 
     application.add_handler(
-        CommandHandler(
-            "profil",
-            profile_cmd,
-        )
+        CommandHandler("profile", profile_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "profile",
-            profile_cmd,
-        )
+        CommandHandler("roles", roles_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "help",
-            help_cmd,
-        )
+        CommandHandler("help", help_cmd)
     )
 
-    # O'yin
+    # GAME
     application.add_handler(
-        CommandHandler(
-            "newgame",
-            newgame_cmd,
-        )
+        CommandHandler("game", game_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "join",
-            join_cmd,
-        )
+        CommandHandler("newgame", newgame_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "players",
-            players_cmd,
-        )
+        CommandHandler("join", join_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "startgame",
-            startgame_cmd,
-        )
+        CommandHandler("players", players_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "role",
-            role_cmd,
-        )
+        CommandHandler("startgame", startgame_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "night",
-            night_cmd,
-        )
+        CommandHandler("night", night_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "day",
-            day_cmd,
-        )
+        CommandHandler("day", day_cmd)
     )
 
-    # Tungi harakatlar
+    # TUNGI HARAKATLAR
     application.add_handler(
-        CommandHandler(
-            "kill",
-            kill_cmd,
-        )
+        CommandHandler("kill", kill_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "heal",
-            heal_cmd,
-        )
+        CommandHandler("heal", heal_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "check",
-            check_cmd,
-        )
+        CommandHandler("check", check_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "guard",
-            guard_cmd,
-        )
+        CommandHandler("guard", guard_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "shoot",
-            shoot_cmd,
-        )
+        CommandHandler("shoot", shoot_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "silence",
-            silence_cmd,
-        )
+        CommandHandler("silence", silence_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "protect",
-            protect_cmd,
-        )
+        CommandHandler("protect", protect_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "shield",
-            shield_cmd,
-        )
+        CommandHandler("shield", shield_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "endnight",
-            endnight_cmd,
-        )
+        CommandHandler("endnight", endnight_cmd)
     )
 
-    # Ovoz
+    # OVOZ
     application.add_handler(
-        CommandHandler(
-            "startvote",
-            startvote_cmd,
-        )
+        CommandHandler("startvote", startvote_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "vote",
-            vote_cmd,
-        )
+        CommandHandler("vote", vote_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "endvote",
-            endvote_cmd,
-        )
+        CommandHandler("endvote", endvote_cmd)
     )
 
-    # Iqtisod
+    # PARA
     application.add_handler(
-        CommandHandler(
-            "money",
-            money_cmd,
-        )
+        CommandHandler("para", para_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "give",
-            gift_cmd,
-        )
+        CommandHandler("mypara", mypara_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "change",
-            change_cmd,
-        )
+        CommandHandler("youpara", youpara_cmd)
+    )
+
+    # IQTISOD
+    application.add_handler(
+        CommandHandler("give", gift_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "exchange",
-            exchange_cmd,
-        )
+        CommandHandler("change", change_cmd)
     )
 
-    # Top
+    # TOP
     application.add_handler(
-        CommandHandler(
-            "top",
-            top_cmd,
-        )
+        CommandHandler("top", top_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "top1",
-            top1_cmd,
-        )
+        CommandHandler("top1", top1_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "top7",
-            top7_cmd,
-        )
+        CommandHandler("top7", top7_cmd)
     )
 
-    # Admin
+    # ADMIN
     application.add_handler(
-        CommandHandler(
-            "addadmin",
-            addadmin_cmd,
-        )
+        CommandHandler("addadmin", addadmin_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "deladmin",
-            deladmin_cmd,
-        )
+        CommandHandler("deladmin", deladmin_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "ban",
-            ban_cmd,
-        )
+        CommandHandler("ban", ban_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "unban",
-            unban_cmd,
-        )
+        CommandHandler("unban", unban_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "bankrot",
-            bankrot_cmd,
-        )
+        CommandHandler("bankrot", bankrot_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "giveadmin",
-            give_admin_cmd,
-        )
+        CommandHandler("giveadmin", give_admin_cmd)
     )
 
     application.add_handler(
-        CommandHandler(
-            "who",
-            who_cmd,
-        )
+        CommandHandler("who", who_cmd)
     )
 
-    # Tugmalar
+    # CALLBACK
     application.add_handler(
-        CallbackQueryHandler(
-            callbacks
-        )
+        CallbackQueryHandler(callbacks)
     )
 
-    # Oddiy xabarlar
+    # ODDIY XABAR
     application.add_handler(
         MessageHandler(
             filters.ALL & ~filters.COMMAND,
@@ -4290,7 +3711,6 @@ def main():
         )
 
     init_db()
-
     load_admins()
 
     threading.Thread(
@@ -4300,9 +3720,7 @@ def main():
 
     application = build_application()
 
-    logger.info(
-        "Bot ishga tushmoqda..."
-    )
+    logger.info("Bot ishga tushmoqda...")
 
     application.run_polling(
         drop_pending_updates=True
