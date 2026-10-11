@@ -1,7 +1,7 @@
 import os, sqlite3, logging, random, threading, html
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from telegram import Update, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, BotCommandScopeChat, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, BotCommand, BotCommandScopeAllPrivateChats, BotCommandScopeAllGroupChats, BotCommandScopeChat, BotCommandScopeDefault, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, ContextTypes, filters
 
 # ==================== SOZLAMALAR ====================
@@ -45,21 +45,36 @@ ROLE_HELP = {
     'Haqiqiy Vampir':'Vampirlar jamoasining maxsus roli.', 'Savdogar':'O‘yin ichidagi savdo bonuslari.'}
 
 PROTECTIONS = {
-    'universal': ('🛡️ Umumiy himoya', '100 pul', 100, 0),
+    'universal': ('🛡️ Umumiy himoya', '💵 100', 100, 0),
     'vote': ('🗳️ Ovoz himoyasi', '💎 1', 0, 1),
-    'fake_doc': ('📁 Soxta hujjat', '190 pul', 190, 0),
+    'fake_doc': ('📁 Soxta hujjat', '💵 190', 190, 0),
     'protect_other': ('🤝 Boshqani himoya qilish', '💎 5', 0, 5),
     'killer': ('🚨 Qotildan himoya', '💎 2', 0, 2),
     'silence': ('🔇 Sukut himoyasi', '💎 1', 0, 1),
-    'poison': ('💊 Zahar himoyasi', '100 pul', 100, 0),
-    'mask': ('🎭 Maska', '100 pul', 100, 0),
-    'slip': ('🥊 Sirpanish himoyasi', '300 pul', 300, 0),
+    'poison': ('💊 Zahar himoyasi', '💵 100', 100, 0),
+    'mask': ('🎭 Maska', '💵 100', 100, 0),
+    'slip': ('🥊 Sirpanish himoyasi', '💵 300', 300, 0),
     'hero_protect': ('🦸 Qahramon himoyasi', '💎 5', 0, 5),
     'ricochet': ('🌀 Rikoshet', '💎 3', 0, 3),
     'profile_change': ('🔄 Profil almashtirish', '💎 5', 0, 5),
     'hero': ('🦸 Qahramon', '💎 90', 0, 90),
 }
 
+PROTECTION_HELP = {
+    'universal': 'Bu himoya egasini bir marta xavfli hujumdan yoki ovoz berish orqali o‘yindan chiqarilishdan saqlash uchun mo‘ljallangan. Himoya mavjud bo‘lsa, undan foydalanish mumkin; ishlatilgach, zaxiradagi soni bittaga kamayadi.',
+    'vote': 'Bu himoya kunduzgi ovoz berish natijasida o‘yindan chiqarilish xavfidan saqlash uchun mo‘ljallangan. Ovozlar hisoblanganda himoya bir marta yordam beradi va ishlatilgach zaxiradan kamayadi.',
+    'fake_doc': 'Soxta hujjat tekshiruv paytida haqiqiy rolingizni yashirishga yordam beradigan maxsus buyum. U tekshiruvda siz haqingizdagi ma’lumotni chalg‘itish uchun mo‘ljallangan.',
+    'protect_other': 'Bu himoya o‘zingizdan boshqa bir o‘yinchini himoya qilish uchun mo‘ljallangan. Kerakli vaziyatda sherigingizni xavfdan asrash imkonini beradi.',
+    'killer': 'Qotildan himoya sizni qotilning hujumidan bir marta saqlash uchun mo‘ljallangan. Himoya ishlatilgach, zaxiradagi soni bittaga kamayadi.',
+    'silence': 'Sukut himoyasi sizni sukut holatining salbiy ta’siridan asrash uchun mo‘ljallangan. U ovoz berish yoki gapirish imkoniyatiga ta’sir qiladigan sukutdan himoyalanish uchun ishlatiladi.',
+    'poison': 'Zahar himoyasi zahar ta’siridan bir marta saqlanish uchun mo‘ljallangan. Zaharli hujumga qarshi kerakli vaziyatda foydalaniladi.',
+    'mask': 'Maska sizning shaxsingiz yoki rolingizni boshqalardan yashirishga yordam beradigan buyum. U siz haqingizdagi ma’lumotni aniqlashni qiyinlashtirish uchun mo‘ljallangan.',
+    'slip': 'Sirpanish himoyasi xavfli hujumdan qochib qolish imkoniyati uchun mo‘ljallangan. U sizni nishonga olgan hujumdan saqlanishga yordam berishi mumkin.',
+    'hero_protect': 'Qahramon himoyasi qahramon rolidagi o‘yinchini hujumdan asrash uchun mo‘ljallangan. Uni qahramonni xavfdan himoya qilish kerak bo‘lgan vaziyatda ishlatish mumkin.',
+    'ricochet': 'Rikoshet himoyasi sizga qaratilgan hujumni qaytarish uchun mo‘ljallangan. Himoya hujumga qarshi javob berish imkonini ifodalaydi.',
+    'profile_change': 'Profil almashtirish maxsus profilni almashtirish funksiyasidan foydalanish uchun mo‘ljallangan. Xarid qilishdan oldin uning o‘yin ichidagi mavjud imkoniyatlari bilan tanishib chiqing.',
+    'hero': 'Qahramon buyumi qahramon bilan bog‘liq maxsus imkoniyatni ochish uchun mo‘ljallangan. U himoya buyumlaridan alohida hisoblanadi.',
+}
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200); self.end_headers(); self.wfile.write(b'OK')
@@ -139,9 +154,9 @@ def lobby_text(g):
     for player in g['players'].values():
         nick = escape(player.get('name', 'O‘yinchi'))
         if is_pro(player['id']):
-            names.append(f'💎 <b>{nick}</b> <b>PRO</b>')
+            names.append(f'<b>{nick}</b> <b>PRO</b>')
         else:
-            names.append(f'👤 {nick}')
+            names.append(f'<b>{nick}</b>')
     roster = '  ·  '.join(names) if names else 'Hali hech kim qo‘shilmadi.'
     return ('🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n'
             f'👥 {roster}\n\n'
@@ -308,10 +323,27 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if q.data.startswith('protect:'):
         key=q.data.split(':',1)[1]
         if key not in PROTECTIONS: return
-        name,price,mc,dc=PROTECTIONS[key]; p=get_player(uid,q.from_user)
-        if p['money']<mc or p['diamonds']<dc: return await q.answer('Balans yetarli emas.',show_alert=True)
-        save_player(uid,money=p['money']-mc,diamonds=p['diamonds']-dc); add_protection(uid,key,1)
-        return await q.edit_message_text(f'✅ Xarid qilindi: {name}\nNarxi: {price}',reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ Himoya markazi',callback_data='protections')],[InlineKeyboardButton('👤 Profil',callback_data='back_profile')]]))
+        name,price,mc,dc=PROTECTIONS[key]
+        description=PROTECTION_HELP.get(key, 'Ushbu himoya o‘yin davomida maxsus imkoniyat beradi.')
+        text=f'{name}\n\n📖 <b>Vazifasi:</b> {description}\n\n💰 <b>Narxi:</b> {price}'
+        return await q.edit_message_text(text,parse_mode='HTML',reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton(f'{name} — {price}',callback_data='buyprotect:'+key)],
+            [InlineKeyboardButton('⬅️ Boshqa himoyalar',callback_data='protections')],
+            [InlineKeyboardButton('👤 Profil',callback_data='back_profile')]
+        ]))
+    if q.data.startswith('buyprotect:'):
+        key=q.data.split(':',1)[1]
+        if key not in PROTECTIONS: return
+        name,price,mc,dc=PROTECTIONS[key]
+        p=get_player(uid,q.from_user)
+        if p['money']<mc or p['diamonds']<dc:
+            return await q.answer('Balans yetarli emas.',show_alert=True)
+        save_player(uid,money=p['money']-mc,diamonds=p['diamonds']-dc)
+        add_protection(uid,key,1)
+        return await q.edit_message_text(f'✅ Xarid qilindi: {name}\nNarxi: {price}',parse_mode='HTML',reply_markup=InlineKeyboardMarkup([
+            [InlineKeyboardButton('⬅️ Himoya markazi',callback_data='protections')],
+            [InlineKeyboardButton('👤 Profil',callback_data='back_profile')]
+        ]))
     if q.data == 'gift':
         pending[uid]={'type':'gift'}
         return await q.edit_message_text('🎁 Olmos yuborish uchun guruhda qabul qiluvchining xabariga reply qilib /give MIQDOR yozing.\nMasalan: /give 2',reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton('⬅️ Profil',callback_data='back_profile')]]))
@@ -421,15 +453,18 @@ async def mypara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
         return await msg.reply_text(text)
     partner = get_player(int(row['partner_id']))
-    name = escape(partner.get('name') or 'Juftingiz')
-    link = f'<a href="tg://user?id={partner["user_id"]}">{name}</a>'
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('👤 Juftim profili', callback_data=f'pair_profile:{partner["user_id"]}')]])
-    text = (f'❤️ <b>SENING JUFTING</b> ❤️\n\n💞 Juftingiz: {link}\n\n'
+    own = get_player(u.id, u)
+    own_name = escape(own.get('name') or u.full_name or 'Siz')
+    partner_name = escape(partner.get('name') or 'Juftingiz')
+    own_link = f'<a href="tg://user?id={u.id}">{own_name}</a>'
+    partner_link = f'<a href="tg://user?id={partner["user_id"]}">{partner_name}</a>'
+    # Matn saqlanadi; faqat ikkala juftning niki metka qilinadi. Profil tugmasi olib tashlandi.
+    text = (f'❤️ <b>SENING JUFTING</b> ❤️\n\n💞 Juftingiz: {own_link} | {partner_link}\n\n'
             'Bir-biringizni asrang va Mafia olamida birga porlang! ✨')
     if update.effective_chat and update.effective_chat.type in ('group', 'supergroup'):
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='HTML', reply_markup=keyboard)
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='HTML')
     else:
-        await msg.reply_text(text, parse_mode='HTML', reply_markup=keyboard)
+        await msg.reply_text(text, parse_mode='HTML')
 
 async def dpara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update):
@@ -827,6 +862,7 @@ async def post_init(app: Application):
         BotCommand('stop', 'O‘yinni to‘xtatish (admin)'),
         BotCommand('help', 'Buyruqlar bo‘yicha yordam'),
     ]
+    await app.bot.set_my_commands([], scope=BotCommandScopeDefault())
     await app.bot.set_my_commands(general, scope=BotCommandScopeAllPrivateChats())
     await app.bot.set_my_commands(group, scope=BotCommandScopeAllGroupChats())
     if OWNER_ID:
