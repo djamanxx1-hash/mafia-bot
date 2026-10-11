@@ -357,8 +357,12 @@ async def money_gift(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if amount<=0: return await msg.reply_text('Miqdor 0 dan katta bo‘lsin.')
     a=get_player(sender.id,sender); b=get_player(target.id,target)
     if a['money']<amount: return await msg.reply_text('❌ Pulingiz yetarli emas.')
+    if target.id == sender.id: return await msg.reply_text('❌ O‘zingizga hadya yubora olmaysiz.')
+    if target.is_bot: return await msg.reply_text('❌ Botga hadya yuborib bo‘lmaydi.')
     save_player(sender.id,money=a['money']-amount); save_player(target.id,money=b['money']+amount)
-    await msg.reply_text(f'✅ {escape(sender.full_name)} → {escape(target.full_name)}\n💰 Yuborildi: {amount:,} pul',parse_mode='HTML')
+    sender_link=f'<a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a>'
+    target_link=f'<a href="tg://user?id={target.id}">{escape(target.full_name)}</a>'
+    await msg.reply_text(f'🎁 {sender_link} {target_link} ga 💵 <b>{amount:,}</b> pul hadya qildi!',parse_mode='HTML')
 
 async def give_diamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -368,8 +372,13 @@ async def give_diamonds(update: Update, context: ContextTypes.DEFAULT_TYPE):
     amount=int(context.args[0]); a=get_player(update.effective_user.id,update.effective_user); target=msg.reply_to_message.from_user; b=get_player(target.id,target)
     if amount<=0: return await msg.reply_text('Miqdor 0 dan katta bo‘lsin.')
     if a['diamonds']<amount: return await msg.reply_text('❌ Olmos yetarli emas.')
-    save_player(update.effective_user.id,diamonds=a['diamonds']-amount); save_player(target.id,diamonds=b['diamonds']+amount)
-    await msg.reply_text(f'✅ {escape(update.effective_user.full_name)} → {escape(target.full_name)}\n💎 Yuborildi: {amount}',parse_mode='HTML')
+    sender=update.effective_user
+    if target.id == sender.id: return await msg.reply_text('❌ O‘zingizga hadya yubora olmaysiz.')
+    if target.is_bot: return await msg.reply_text('❌ Botga hadya yuborib bo‘lmaydi.')
+    save_player(sender.id,diamonds=a['diamonds']-amount); save_player(target.id,diamonds=b['diamonds']+amount)
+    sender_link=f'<a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a>'
+    target_link=f'<a href="tg://user?id={target.id}">{escape(target.full_name)}</a>'
+    await msg.reply_text(f'🎁 {sender_link} {target_link} ga 💎 <b>{amount:,}</b> olmos hadya qildi!',parse_mode='HTML')
 
 async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -882,11 +891,27 @@ async def post_init(app: Application):
         await app.bot.set_my_commands(owner, scope=BotCommandScopeChat(chat_id=OWNER_ID))
 
 async def run_command_and_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, handler):
+    # Guruhdagi buyruqlar faqat Telegram guruh adminlariga; hadya buyruqlari hammaga ochiq.
+    msg = update.effective_message
+    chat = update.effective_chat
+    if chat and chat.type in ('group', 'supergroup') and handler not in (money_gift, give_diamonds):
+        user = update.effective_user
+        try:
+            member = await context.bot.get_chat_member(chat.id, user.id)
+            is_group_admin = member.status in ('administrator', 'creator')
+        except Exception:
+            is_group_admin = False
+        if not is_group_admin:
+            try:
+                await msg.reply_text('❌ Sizga ruxsat etilmagan.')
+            finally:
+                await delete_command_message(msg)
+            return
     # Guruhda buyruq bajarilgach, buyruq xabarini o‘chiramiz; bot javobi qoladi.
     try:
         return await handler(update, context)
     finally:
-        await delete_command_message(update.effective_message)
+        await delete_command_message(msg)
 
 def wrapped(handler):
     async def _wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
