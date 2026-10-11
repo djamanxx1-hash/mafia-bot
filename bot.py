@@ -199,7 +199,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
-    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /newgame /game /players /startgame /leave /role /night /vote /top /top1 /top7\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
+    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /game /players /startgame /leave /roles /role /night /kill /heal /check /vote /endnight /top /top1 /top7\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
 
 async def delete_command_message(msg):
     """Guruhdagi buyruq xabarini o'chirish; botga admin huquqi kerak bo'lishi mumkin."""
@@ -404,9 +404,8 @@ async def para_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f'lekin <a href="tg://user?id={target.id}">{escape(target.full_name)}</a> avval botga shaxsiy chatda /start yuborishi kerak.',
             parse_mode='HTML')
 
-    await context.bot.send_message(chat_id=chat.id, text=
-        f'💌 <a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a> juftlik so‘rovini yubordi! ❤️',
-        parse_mode='HTML')
+    # So‘rov shaxsiy chatga yuboriladi; guruhda 'so‘rov yubordi' degan xabar chiqmaydi.
+    return
 
 async def mypara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -431,6 +430,43 @@ async def mypara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='HTML', reply_markup=keyboard)
     else:
         await msg.reply_text(text, parse_mode='HTML', reply_markup=keyboard)
+
+async def dpara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not allowed(update):
+        return
+    msg = update.effective_message
+    uid = update.effective_user.id
+    chat = update.effective_chat
+    if chat and chat.type in ('group', 'supergroup'):
+        await delete_command_message(msg)
+    with db() as con:
+        pair = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (uid,)).fetchone()
+        if pair:
+            partner_id = int(pair['partner_id'])
+            con.execute('DELETE FROM pairs WHERE user_id=? OR partner_id=?', (uid, uid))
+        else:
+            partner_id = None
+        # Ajralish bilan birga kutilayotgan juftlik so‘rovlari ham bekor bo‘ladi.
+        con.execute('DELETE FROM pair_requests WHERE requester_id=? OR target_id=?', (uid, uid))
+    if not partner_id:
+        text = '💔 Siz hozir hech kim bilan juft emassiz. Ba’zan aytilmagan hislar ham og‘riydi… 🥀'
+    else:
+        partner = get_player(partner_id)
+        partner_name = escape(partner.get('name') or 'juftingiz')
+        text = (f'💔 <b>JUFTLIK YAKUNLANDI</b>\n\n'
+                f'❤️‍🩹 Siz va <a href="tg://user?id={partner_id}">{partner_name}</a> endi juft emassiz.\n\n'
+                '“Ba’zi insonlar qalbimizda qoladi, ammo yonimizda qololmaydi…” 🥀\n\n'
+                'Har kim o‘z yo‘lidan davom etadi. O‘zingizni asrang. 🕊️')
+        try:
+            await context.bot.send_message(chat_id=partner_id,
+                text='💔 Juftingiz siz bilan juftlikni yakunladi.\n\n'
+                     '“Ba’zi insonlar qalbimizda qoladi, ammo yonimizda qololmaydi…” 🥀')
+        except Exception:
+            pass
+    if chat and chat.type in ('group', 'supergroup'):
+        await context.bot.send_message(chat_id=chat.id, text=text, parse_mode='HTML')
+    else:
+        await msg.reply_text(text, parse_mode='HTML')
 
 async def pair_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
@@ -521,7 +557,7 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def players_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
     g=game_for(update.effective_chat.id); ps=player_list(g)
-    if not ps: return await update.effective_message.reply_text('Hozircha o‘yinchilar yo‘q. /newgame')
+    if not ps: return await update.effective_message.reply_text('Hozircha o‘yinchilar yo‘q. /game')
     lines=['👥 <b>O‘YINCHILAR</b>','']
     for i,p in enumerate(ps,1): lines.append(f'{i}. {"🟢" if p.get("alive",True) else "💀"} {escape(p["name"])}')
     await update.effective_message.reply_text('\n'.join(lines),parse_mode='HTML')
@@ -755,33 +791,100 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception('Handler xatosi:', exc_info=context.error)
 
 async def post_init(app: Application):
-    # Oddiy foydalanuvchi shaxsiy menyusi — admin buyruqlari ko‘rinmaydi.
-    general=[BotCommand('start','Botni boshlash'),BotCommand('profile','Profil'),BotCommand('roles','O‘yin rollari'),BotCommand('help','Yordam')]
-    # Guruh menyusida /join yo‘q: o‘yinga inline tugma orqali qo‘shilinadi.
-    group=[BotCommand('start','Botni boshlash'),BotCommand('game','Yangi o‘yin'),BotCommand('newgame','Yangi o‘yin ochish'),BotCommand('players','O‘yinchilar'),BotCommand('startgame','O‘yinni boshlash'),BotCommand('leave','O‘yindan chiqish'),BotCommand('roles','O‘yin rollari'),BotCommand('role','Mening rolim'),BotCommand('night','Tungi vazifa'),BotCommand('kill','Nishonga hujum'),BotCommand('heal','Nishonni davolash'),BotCommand('check','Nishonni tekshirish'),BotCommand('vote','Ovoz berish'),BotCommand('endnight','Tunni tugatish'),BotCommand('top','TOP'),BotCommand('top1','Bugungi TOP'),BotCommand('top7','7 kunlik TOP'),BotCommand('money','Pul yuborish — reply'),BotCommand('give','Olmos yuborish — reply'),BotCommand('kurs','Olmos kursi'),BotCommand('help','Yordam')]
-    await app.bot.set_my_commands(general,scope=BotCommandScopeAllPrivateChats())
-    await app.bot.set_my_commands(group,scope=BotCommandScopeAllGroupChats())
+    # Shaxsiy menyu. Admin buyruqlari oddiy foydalanuvchiga ko‘rsatilmaydi.
+    general = [
+        BotCommand('start', 'Botni boshlash'),
+        BotCommand('profile', 'Profilni ko‘rish'),
+        BotCommand('roles', 'O‘yin rollari'),
+        BotCommand('help', 'Yordam'),
+    ]
+    # Guruh menyusi: /start birinchi, /game yagona yangi o‘yin buyrug‘i.
+    # Juftlik buyruqlari menyuda ataylab ko‘rsatilmaydi.
+    group = [
+        BotCommand('start', 'Botni boshlash'),
+        BotCommand('game', 'Yangi o‘yin ochish'),
+        BotCommand('profile', 'O‘yinchi profilini ko‘rish (admin)'),
+        BotCommand('players', 'O‘yinchilar ro‘yxati'),
+        BotCommand('startgame', 'O‘yinni boshlash'),
+        BotCommand('leave', 'O‘yindan chiqish'),
+        BotCommand('roles', 'Barcha rollar'),
+        BotCommand('role', 'O‘z rolingni ko‘rish'),
+        BotCommand('night', 'Tungi vazifani ko‘rish'),
+        BotCommand('kill', 'Tunda nishonga hujum'),
+        BotCommand('heal', 'O‘yinchini davolash'),
+        BotCommand('check', 'O‘yinchini tekshirish'),
+        BotCommand('vote', 'Ovoz berish'),
+        BotCommand('endnight', 'Tunni yakunlash'),
+        BotCommand('top', 'Umumiy reyting'),
+        BotCommand('top1', 'Bugungi reyting'),
+        BotCommand('top7', '7 kunlik reyting'),
+        BotCommand('money', 'Reply orqali pul yuborish'),
+        BotCommand('give', 'Reply orqali olmos yuborish'),
+        BotCommand('kurs', 'Olmos kursi'),
+        BotCommand('lang', 'Bot tilini ko‘rish'),
+        BotCommand('sozlamalar', 'O‘yin sozlamalari (admin)'),
+        BotCommand('giveaway', 'Sovrinli tanlov (admin)'),
+        BotCommand('stop', 'O‘yinni to‘xtatish (admin)'),
+        BotCommand('help', 'Buyruqlar bo‘yicha yordam'),
+    ]
+    await app.bot.set_my_commands(general, scope=BotCommandScopeAllPrivateChats())
+    await app.bot.set_my_commands(group, scope=BotCommandScopeAllGroupChats())
     if OWNER_ID:
-        owner=[*general,BotCommand('admin','Admin panel'),BotCommand('addadmin','Admin qo‘shish'),BotCommand('removeadmin','Adminni olib tashlash'),BotCommand('adddiamond','Olmos qo‘shish'),BotCommand('removediamond','Olmos ayirish'),BotCommand('addmoney','Pul qo‘shish'),BotCommand('removemoney','Pul ayirish'),BotCommand('bankrot1','Pulni 0 qilish'),BotCommand('bankrot2','Olmos va dollarni 0 qilish'),BotCommand('ban','Ban'),BotCommand('unban','Unban')]
-        await app.bot.set_my_commands(owner,scope=BotCommandScopeChat(chat_id=OWNER_ID))
+        owner = general + [
+            BotCommand('admin', 'Admin panel'),
+            BotCommand('addadmin', 'Admin tayinlash'),
+            BotCommand('removeadmin', 'Adminlikdan olish'),
+            BotCommand('adddiamond', 'Olmos qo‘shish'),
+            BotCommand('removediamond', 'Olmos ayirish'),
+            BotCommand('addmoney', 'Pul qo‘shish'),
+            BotCommand('removemoney', 'Pul ayirish'),
+            BotCommand('bankrot1', 'Pulni nol qilish'),
+            BotCommand('bankrot2', 'Olmos va dollarni nol qilish'),
+            BotCommand('ban', 'O‘yinchini cheklash'),
+            BotCommand('unban', 'Cheklovni olib tashlash'),
+        ]
+        await app.bot.set_my_commands(owner, scope=BotCommandScopeChat(chat_id=OWNER_ID))
+
+async def run_command_and_delete(update: Update, context: ContextTypes.DEFAULT_TYPE, handler):
+    # Guruhda buyruq bajarilgach, buyruq xabarini o‘chiramiz; bot javobi qoladi.
+    try:
+        return await handler(update, context)
+    finally:
+        await delete_command_message(update.effective_message)
+
+def wrapped(handler):
+    async def _wrapped(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        return await run_command_and_delete(update, context, handler)
+    return _wrapped
 
 def main():
-    if not TOKEN: raise RuntimeError('BOT_TOKEN environment variable topilmadi.')
-    if not OWNER_ID: logger.warning('OWNER_ID 0. Ega admin buyruqlari ishlamasligi mumkin.')
-    init_db(); threading.Thread(target=health_server,daemon=True).start()
-    app=Application.builder().token(TOKEN).post_init(post_init).build()
-    handlers=[
-        ('start',start),('help',help_cmd),('profile',profile),('roles',roles_cmd),('money',money_gift),('give',give_diamonds),
-        ('top',top_cmd),('top1',top_cmd),('top7',top_cmd),('para',para_cmd),('mypara',mypara_cmd),('game',newgame),('newgame',newgame),
-        ('players',players_cmd),('startgame',startgame),('role',role_cmd),('night',night_cmd),
-        ('kill',kill_cmd),('heal',heal_cmd),('check',check_cmd),('endnight',endnight),('vote',vote_cmd),('leave',leave_cmd),
-        ('admin',admin_cmd),('adddiamond',adddiamond),('adddiamonds',adddiamond),('removediamond',removediamond),
-        ('addmoney',addmoney),('addbalance',addmoney),('removemoney',removemoney),('bankrot1',bankrot),('bankrot2',bankrot),
-        ('ban',ban_cmd),('unban',unban_cmd),('addadmin',addadmin),('makeadmin',addadmin),('removeadmin',removeadmin),
-        ('stop',stop_cmd),('lang',lang_cmd),('kurs',kurs_cmd),('sozlamalar',settings_cmd),('giveaway',giveaway_cmd)]
-    for name,fn in handlers: app.add_handler(CommandHandler(name,fn))
+    if not TOKEN:
+        raise RuntimeError('BOT_TOKEN environment variable topilmadi.')
+    if not OWNER_ID:
+        logger.warning('OWNER_ID 0. Ega admin buyruqlari ishlamasligi mumkin.')
+    init_db()
+    threading.Thread(target=health_server, daemon=True).start()
+    app = Application.builder().token(TOKEN).post_init(post_init).build()
+    handlers = [
+        ('start', start), ('help', help_cmd), ('profile', profile), ('roles', roles_cmd),
+        ('money', money_gift), ('give', give_diamonds),
+        ('top', top_cmd), ('top1', top_cmd), ('top7', top_cmd),
+        ('para', para_cmd), ('mypara', mypara_cmd), ('dpara', dpara_cmd),
+        ('game', newgame),
+        ('players', players_cmd), ('startgame', startgame), ('role', role_cmd), ('night', night_cmd),
+        ('kill', kill_cmd), ('heal', heal_cmd), ('check', check_cmd), ('endnight', endnight),
+        ('vote', vote_cmd), ('leave', leave_cmd),
+        ('admin', admin_cmd), ('adddiamond', adddiamond), ('adddiamonds', adddiamond),
+        ('removediamond', removediamond), ('addmoney', addmoney), ('addbalance', addmoney),
+        ('removemoney', removemoney), ('bankrot1', bankrot), ('bankrot2', bankrot),
+        ('ban', ban_cmd), ('unban', unban_cmd), ('addadmin', addadmin),
+        ('makeadmin', addadmin), ('removeadmin', removeadmin), ('stop', stop_cmd),
+        ('lang', lang_cmd), ('kurs', kurs_cmd), ('sozlamalar', settings_cmd), ('giveaway', giveaway_cmd),
+    ]
+    for name, fn in handlers:
+        app.add_handler(CommandHandler(name, wrapped(fn)))
     app.add_handler(CallbackQueryHandler(callback))
-    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL,track_group),group=1)
+    app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.ALL, track_group), group=1)
     app.add_error_handler(error_handler)
     logger.info('MAFIA BOT ishga tushmoqda...')
     app.run_polling(drop_pending_updates=True)
