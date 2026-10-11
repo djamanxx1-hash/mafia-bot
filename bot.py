@@ -73,12 +73,12 @@ def health_server():
 def db():
     con = sqlite3.connect(DB_PATH, timeout=20)
     con.row_factory = sqlite3.Row
-    con.execute('PRAGMA journal_mode=WAL')
     con.execute('PRAGMA busy_timeout=20000')
     return con
 
 def init_db():
     with db() as con:
+        con.execute('PRAGMA journal_mode=WAL')
         con.execute('''CREATE TABLE IF NOT EXISTS players(
             user_id INTEGER PRIMARY KEY, name TEXT DEFAULT '', username TEXT DEFAULT '',
             diamonds INTEGER DEFAULT 0, money INTEGER DEFAULT 0, dollars INTEGER DEFAULT 0,
@@ -86,6 +86,15 @@ def init_db():
         con.execute('CREATE TABLE IF NOT EXISTS admins(user_id INTEGER PRIMARY KEY)')
         con.execute('CREATE TABLE IF NOT EXISTS group_members(chat_id INTEGER, user_id INTEGER, PRIMARY KEY(chat_id,user_id))')
         con.execute('CREATE TABLE IF NOT EXISTS protections(user_id INTEGER, item TEXT, amount INTEGER DEFAULT 0, PRIMARY KEY(user_id,item))')
+        con.execute('CREATE TABLE IF NOT EXISTS pairs(user_id INTEGER PRIMARY KEY, partner_id INTEGER NOT NULL)')
+        con.execute('''CREATE TABLE IF NOT EXISTS pair_requests(
+            requester_id INTEGER NOT NULL, target_id INTEGER NOT NULL, chat_id INTEGER NOT NULL,
+            created_at INTEGER NOT NULL, PRIMARY KEY(requester_id,target_id))''')
+        # PRO muddati: Unix timestamp. 0 bo‘lsa faol PRO yo‘q.
+        try:
+            con.execute('ALTER TABLE players ADD COLUMN pro_until INTEGER DEFAULT 0')
+        except sqlite3.OperationalError:
+            pass
         if OWNER_ID:
             con.execute('INSERT OR IGNORE INTO admins(user_id) VALUES(?)', (OWNER_ID,))
 
@@ -117,6 +126,26 @@ def protection_count(uid, key):
     with db() as con:
         row = con.execute('SELECT amount FROM protections WHERE user_id=? AND item=?', (uid,key)).fetchone()
         return int(row['amount']) if row else 0
+
+def is_pro(uid):
+    # PRO ustuni eski bazaga ham init_db() orqali qo‘shiladi.
+    with db() as con:
+        row = con.execute('SELECT pro_until FROM players WHERE user_id=?', (uid,)).fetchone()
+        return bool(row and int(row['pro_until'] or 0) > int(datetime.now().timestamp()))
+
+def lobby_text(g):
+    # Niklar bitta matn qatorida beriladi; Telegram ekran kengligiga qarab o‘zi o‘raydi.
+    names = []
+    for player in g['players'].values():
+        nick = escape(player.get('name', 'O‘yinchi'))
+        if is_pro(player['id']):
+            names.append(f'💎 <b>{nick}</b> <b>PRO</b>')
+        else:
+            names.append(f'👤 {nick}')
+    roster = '  ·  '.join(names) if names else 'Hali hech kim qo‘shilmadi.'
+    return ('🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n'
+            f'👥 {roster}\n\n'
+            'O‘yinga kirish uchun quyidagi tugmani bosing.')
 
 def is_owner(uid): return uid == OWNER_ID and OWNER_ID != 0
 def is_admin(uid):
@@ -170,23 +199,55 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
-    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /newgame /game /players /startgame /leave /role /night /vote /top /top1 /top7 /para\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
+    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /newgame /game /players /startgame /leave /role /night /vote /top /top1 /top7\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
+
+async def delete_command_message(msg):
+    """Guruhdagi buyruq xabarini o'chirish; botga admin huquqi kerak bo'lishi mumkin."""
+    try:
+        if msg and msg.chat and msg.chat.type in ("group", "supergroup"):
+            await msg.delete()
+            return True
+    except Exception as exc:
+        logger.info("Buyruq xabarini o'chirib bo'lmadi: %s", exc)
+    return False
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
     u = update.effective_user
-    target = u
-    # Reply orqali boshqa odamning profilini faqat admin ko‘ra oladi.
-    if update.effective_chat and update.effective_chat.type in ('group','supergroup') and update.effective_message.reply_to_message:
-        if not is_admin(u.id): return await update.effective_message.reply_text('🔒 Boshqa odam profilini faqat admin ko‘ra oladi.')
-        target = update.effective_message.reply_to_message.from_user
-    elif context.args and is_admin(u.id):
+    msg = update.effective_message
+    chat = update.effective_chat
+    in_group = bool(chat and chat.type in ('group', 'supergroup'))
+
+    # Guruhda oddiy o'yinchining profili ommaga chiqarilmaydi: o'z bot chatiga yuboriladi.
+    if in_group and not is_admin(u.id):
+        await delete_command_message(msg)
+        p = get_player(u.id, u)
         try:
-            uid = int(context.args[0]); p = get_player(uid)
-            return await update.effective_message.reply_text('📋 <b>FOYDALANUVCHI PROFILI</b>\n\n'+money_text(p), parse_mode='HTML')
-        except ValueError: return await update.effective_message.reply_text('ID рақам бўлиши керак.')
+            await context.bot.send_message(u.id, '👤 <b>PROFIL</b>\n\n' + money_text(p),
+                                           parse_mode='HTML', reply_markup=profile_keyboard())
+        except Exception:
+            await context.bot.send_message(chat_id=chat.id, text='👤 Profilni ko‘rish uchun avval botning shaxsiy chatida /start bosing.')
+        return
+
+    target = u
+    if in_group:
+        if msg.reply_to_message and msg.reply_to_message.from_user:
+            target = msg.reply_to_message.from_user
+        elif context.args and context.args[0].isdigit():
+            target = None
+            p = get_player(int(context.args[0]))
+            await msg.reply_text('📋 <b>FOYDALANUVCHI PROFILI</b>\n\n' + money_text(p), parse_mode='HTML')
+            return
+        else:
+            await delete_command_message(msg)
+            return await context.bot.send_message(chat_id=chat.id, text='Admin uchun: o‘yinchi xabariga reply qilib /profile yozing yoki /profile ID.')
+    elif context.args and is_admin(u.id) and context.args[0].isdigit():
+        p = get_player(int(context.args[0]))
+        return await msg.reply_text('📋 <b>FOYDALANUVCHI PROFILI</b>\n\n' + money_text(p), parse_mode='HTML')
+
     p = get_player(target.id, target)
-    await update.effective_message.reply_text('👤 <b>PROFIL</b>\n\n'+money_text(p), parse_mode='HTML', reply_markup=profile_keyboard() if target.id == u.id else None)
+    await msg.reply_text('👤 <b>PROFIL</b>\n\n' + money_text(p), parse_mode='HTML',
+                         reply_markup=profile_keyboard() if target.id == u.id else None)
 
 async def roles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -198,6 +259,9 @@ async def roles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     q = update.callback_query
+    # Juftlik so‘rovlarini umumiy callbackdan oldin boshqaramiz.
+    if q.data.startswith(('pair_accept:', 'pair_decline:', 'pair_profile:')):
+        return await pair_callback(update, context)
     if not q.data.startswith('join_game:'):
         await q.answer()
     if not allowed(update): return
@@ -221,12 +285,11 @@ async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         g['players'][u.id] = {'id': u.id, 'name': u.full_name, 'alive': True}
         with db() as con:
             con.execute('INSERT OR IGNORE INTO group_members(chat_id,user_id) VALUES(?,?)', (chat_id, u.id))
-        count = len(g['players'])
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'➕ Qo‘shilish ({count}/{MAX_PLAYERS})', callback_data=f'join_game:{chat_id}')]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('➕ Qo‘shilish', callback_data=f'join_game:{chat_id}')]])
         try:
-            await q.edit_message_text(f'🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n👥 O‘yinchilar: {count}/{MAX_PLAYERS}\n🔹 Kamida 4 kishi kerak.\n\nO‘yinga kirish uchun quyidagi tugmani bosing.', parse_mode='HTML', reply_markup=keyboard)
-        except Exception:
-            pass
+            await q.edit_message_text(lobby_text(g), parse_mode='HTML', reply_markup=keyboard)
+        except Exception as e:
+            logger.warning('Lobby xabarini yangilab bo‘lmadi: %s', e)
         return await q.answer('✅ O‘yinga qo‘shildingiz!')
     if q.data == 'back_profile':
         p=get_player(uid,q.from_user); return await q.edit_message_text('👤 <b>PROFIL</b>\n\n'+money_text(p),parse_mode='HTML',reply_markup=profile_keyboard())
@@ -289,13 +352,142 @@ async def top_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def para_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
-    chat=update.effective_chat
-    if chat.type not in ('group','supergroup'): return await update.effective_message.reply_text('/para guruhda ishlaydi.')
+    msg = update.effective_message
+    chat = update.effective_chat
+    if not chat or chat.type not in ('group', 'supergroup'):
+        return await msg.reply_text('❤️ Juftlik so‘rovini guruhda, odamning xabariga reply qilib yuboring: /para')
+    if not msg.reply_to_message or not msg.reply_to_message.from_user:
+        await delete_command_message(msg)
+        return await context.bot.send_message(chat_id=chat.id, text='💌 Juftlik so‘rovi yuborish uchun o‘yinchining xabariga reply qilib /para yozing.')
+
+    sender = update.effective_user
+    target = msg.reply_to_message.from_user
+    await delete_command_message(msg)
+    if target.is_bot:
+        return await context.bot.send_message(chat_id=chat.id, text='🤖 Bot bilan juft bo‘lib bo‘lmaydi.')
+    if sender.id == target.id:
+        return await context.bot.send_message(chat_id=chat.id, text='😊 O‘zingizga juftlik so‘rovi yubora olmaysiz.')
+
+    get_player(sender.id, sender)
+    get_player(target.id, target)
     with db() as con:
-        rows=con.execute('SELECT p.user_id,p.name FROM players p JOIN group_members g ON p.user_id=g.user_id WHERE g.chat_id=? AND p.banned=0',(chat.id,)).fetchall()
-    if len(rows)<2: return await update.effective_message.reply_text('Juftlik tanlash uchun kamida 2 foydalanuvchi bot bilan muloqot qilgan bo‘lishi kerak.')
-    a,b=random.sample(rows,2)
-    await update.effective_message.reply_text(f'❤️ <b>HAQIQIY JUFTLIK</b> ❤️\n\n<b>{escape(a["name"])} ❤️ {escape(b["name"])}</b>',parse_mode='HTML')
+        a = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (sender.id,)).fetchone()
+        b = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (target.id,)).fetchone()
+        if a:
+            return await context.bot.send_message(chat_id=chat.id, text='❤️ Sizning juftingiz allaqachon bor. Avvalgi juftlikni o‘zgartirish uchun admin yordamiga murojaat qiling.')
+        if b:
+            return await context.bot.send_message(chat_id=chat.id, text='💔 Bu o‘yinchining allaqachon jufti bor.')
+        existing = con.execute('SELECT 1 FROM pair_requests WHERE requester_id=? AND target_id=?', (sender.id, target.id)).fetchone()
+        if existing:
+            return await context.bot.send_message(chat_id=chat.id, text='💌 Bu o‘yinchiga so‘rov allaqachon yuborilgan.')
+        con.execute('INSERT INTO pair_requests(requester_id,target_id,chat_id,created_at) VALUES(?,?,?,?)',
+                    (sender.id, target.id, chat.id, int(datetime.now().timestamp())))
+
+    keyboard = InlineKeyboardMarkup([[
+        InlineKeyboardButton('💚 Qabul qilish', callback_data=f'pair_accept:{sender.id}:{target.id}'),
+        InlineKeyboardButton('❌ Rad etish', callback_data=f'pair_decline:{sender.id}:{target.id}')
+    ]])
+    sender_link = f'<a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a>'
+    target_link = f'<a href="tg://user?id={target.id}">{escape(target.full_name)}</a>'
+    request_text = (
+        f'💌 <b>JUFTLIK SO‘ROVI</b>\n\n{sender_link} siz bilan juft bo‘lishni xohlaydi! ❤️\n\n'
+        'Birgalikda Mafia olamida o‘z hikoyangizni boshlaysizmi?\n'
+        'Qaroringizni quyidagi tugmalardan biri orqali bildiring. ✨'
+    )
+    try:
+        await context.bot.send_message(target.id, request_text, parse_mode='HTML', reply_markup=keyboard)
+    except Exception:
+        with db() as con:
+            con.execute('DELETE FROM pair_requests WHERE requester_id=? AND target_id=?', (sender.id, target.id))
+        return await context.bot.send_message(chat_id=chat.id, text=
+            f'💌 <a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a> juftlik so‘rovini yubormoqchi, '
+            f'lekin <a href="tg://user?id={target.id}">{escape(target.full_name)}</a> avval botga shaxsiy chatda /start yuborishi kerak.',
+            parse_mode='HTML')
+
+    await context.bot.send_message(chat_id=chat.id, text=
+        f'💌 <a href="tg://user?id={sender.id}">{escape(sender.full_name)}</a> juftlik so‘rovini yubordi! ❤️',
+        parse_mode='HTML')
+
+async def mypara_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not allowed(update): return
+    msg = update.effective_message
+    if update.effective_chat and update.effective_chat.type in ('group', 'supergroup'):
+        await delete_command_message(msg)
+    u = update.effective_user
+    with db() as con:
+        row = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (u.id,)).fetchone()
+    if not row:
+        text = '💔 Sizda hozircha juft yo‘q. Guruhda o‘yinchining xabariga reply qilib /para yozib, so‘rov yuborishingiz mumkin.'
+        if update.effective_chat and update.effective_chat.type in ('group', 'supergroup'):
+            return await context.bot.send_message(chat_id=update.effective_chat.id, text=text)
+        return await msg.reply_text(text)
+    partner = get_player(int(row['partner_id']))
+    name = escape(partner.get('name') or 'Juftingiz')
+    link = f'<a href="tg://user?id={partner["user_id"]}">{name}</a>'
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('👤 Juftim profili', callback_data=f'pair_profile:{partner["user_id"]}')]])
+    text = (f'❤️ <b>SENING JUFTING</b> ❤️\n\n💞 Juftingiz: {link}\n\n'
+            'Bir-biringizni asrang va Mafia olamida birga porlang! ✨')
+    if update.effective_chat and update.effective_chat.type in ('group', 'supergroup'):
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=text, parse_mode='HTML', reply_markup=keyboard)
+    else:
+        await msg.reply_text(text, parse_mode='HTML', reply_markup=keyboard)
+
+async def pair_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    q = update.callback_query
+    data = q.data or ''
+    uid = q.from_user.id
+    if not allowed(update):
+        return await q.answer('Sizda bu amalni bajarish huquqi yo‘q.', show_alert=True)
+    if data.startswith('pair_profile:'):
+        try: partner_id = int(data.split(':', 1)[1])
+        except (ValueError, IndexError): return await q.answer('Profil topilmadi.', show_alert=True)
+        with db() as con:
+            pair = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (uid,)).fetchone()
+        if not pair or int(pair['partner_id']) != partner_id:
+            return await q.answer('Bu profil faqat juftingiz uchun mavjud.', show_alert=True)
+        p = get_player(partner_id)
+        await q.answer()
+        return await q.message.reply_text('👤 <b>JUFTINGIZ PROFILI</b>\n\n' + money_text(p), parse_mode='HTML')
+    try:
+        action, requester_id, target_id = data.split(':')
+        requester_id, target_id = int(requester_id), int(target_id)
+    except (ValueError, IndexError):
+        return await q.answer('So‘rov noto‘g‘ri.', show_alert=True)
+    if uid != target_id:
+        return await q.answer('Bu so‘rov boshqa o‘yinchiga yuborilgan.', show_alert=True)
+    with db() as con:
+        request = con.execute('SELECT chat_id FROM pair_requests WHERE requester_id=? AND target_id=?',
+                              (requester_id, target_id)).fetchone()
+        if not request:
+            return await q.answer('Bu so‘rov bekor qilingan yoki avval javob berilgan.', show_alert=True)
+        if action == 'pair_decline':
+            con.execute('DELETE FROM pair_requests WHERE requester_id=? AND target_id=?', (requester_id, target_id))
+        elif action == 'pair_accept':
+            a = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (requester_id,)).fetchone()
+            b = con.execute('SELECT partner_id FROM pairs WHERE user_id=?', (target_id,)).fetchone()
+            if a or b:
+                con.execute('DELETE FROM pair_requests WHERE requester_id=? AND target_id=?', (requester_id, target_id))
+                return await q.answer('Sizlardan biringizning allaqachon jufti bor.', show_alert=True)
+            con.execute('INSERT INTO pairs(user_id,partner_id) VALUES(?,?)', (requester_id, target_id))
+            con.execute('INSERT INTO pairs(user_id,partner_id) VALUES(?,?)', (target_id, requester_id))
+            con.execute('DELETE FROM pair_requests WHERE requester_id=? AND target_id=?', (requester_id, target_id))
+    await q.answer('❤️ Juftlik so‘rovi qabul qilindi!' if action == 'pair_accept' else 'So‘rov rad etildi.')
+    if action == 'pair_accept':
+        requester = get_player(requester_id)
+        target = get_player(target_id, q.from_user)
+        text = (f'💞 <b>YANGI JUFTLIK!</b> ❤️\n\n'
+                f'<a href="tg://user?id={requester_id}">{escape(requester["name"])}</a> '
+                f'❤️ <a href="tg://user?id={target_id}">{escape(target["name"])}</a>\n\n'
+                'Tabriklaymiz! Mafia olamida bir-biringizga omad tilaymiz! ✨')
+        try:
+            await q.edit_message_text(text, parse_mode='HTML')
+        except Exception:
+            await q.message.reply_text(text, parse_mode='HTML')
+    else:
+        try:
+            await q.edit_message_text('💔 <b>Juftlik so‘rovi rad etildi.</b>\nYaxshi niyat uchun rahmat. ❤️', parse_mode='HTML')
+        except Exception:
+            pass
 
 # ==================== O'YIN ====================
 def game_for(chat_id):
@@ -321,10 +513,9 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     g=game_for(chat.id)
     if g['started']: return await update.effective_message.reply_text('❌ Hozir o‘yin davom etmoqda.')
     g.update(players={},started=False,phase='lobby',votes={},actions={},silenced=set(),lobby_message_id=None)
-    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'➕ Qo‘shilish (0/{MAX_PLAYERS})', callback_data=f'join_game:{chat.id}')]])
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton('➕ Qo‘shilish', callback_data=f'join_game:{chat.id}')]])
     sent = await update.effective_message.reply_text(
-        f'🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n👥 O‘yinchilar: 0/{MAX_PLAYERS}\n🔹 Kamida {MIN_PLAYERS} kishi kerak.\n\nO‘yinga kirish uchun quyidagi tugmani bosing.',
-        parse_mode='HTML', reply_markup=keyboard)
+        lobby_text(g), parse_mode='HTML', reply_markup=keyboard)
     g['lobby_message_id'] = sent.message_id
 
 async def players_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -567,7 +758,7 @@ async def post_init(app: Application):
     # Oddiy foydalanuvchi shaxsiy menyusi — admin buyruqlari ko‘rinmaydi.
     general=[BotCommand('start','Botni boshlash'),BotCommand('profile','Profil'),BotCommand('roles','O‘yin rollari'),BotCommand('help','Yordam')]
     # Guruh menyusida /join yo‘q: o‘yinga inline tugma orqali qo‘shilinadi.
-    group=[BotCommand('start','Botni boshlash'),BotCommand('game','Yangi o‘yin'),BotCommand('newgame','Yangi o‘yin ochish'),BotCommand('players','O‘yinchilar'),BotCommand('startgame','O‘yinni boshlash'),BotCommand('leave','O‘yindan chiqish'),BotCommand('profile','Profil'),BotCommand('roles','O‘yin rollari'),BotCommand('role','Mening rolim'),BotCommand('night','Tungi vazifa'),BotCommand('kill','Nishonga hujum'),BotCommand('heal','Nishonni davolash'),BotCommand('check','Nishonni tekshirish'),BotCommand('vote','Ovoz berish'),BotCommand('endnight','Tunni tugatish'),BotCommand('top','TOP'),BotCommand('top1','Bugungi TOP'),BotCommand('top7','7 kunlik TOP'),BotCommand('para','Juftlik'),BotCommand('money','Pul yuborish — reply'),BotCommand('give','Olmos yuborish — reply'),BotCommand('kurs','Olmos kursi'),BotCommand('help','Yordam')]
+    group=[BotCommand('start','Botni boshlash'),BotCommand('game','Yangi o‘yin'),BotCommand('newgame','Yangi o‘yin ochish'),BotCommand('players','O‘yinchilar'),BotCommand('startgame','O‘yinni boshlash'),BotCommand('leave','O‘yindan chiqish'),BotCommand('roles','O‘yin rollari'),BotCommand('role','Mening rolim'),BotCommand('night','Tungi vazifa'),BotCommand('kill','Nishonga hujum'),BotCommand('heal','Nishonni davolash'),BotCommand('check','Nishonni tekshirish'),BotCommand('vote','Ovoz berish'),BotCommand('endnight','Tunni tugatish'),BotCommand('top','TOP'),BotCommand('top1','Bugungi TOP'),BotCommand('top7','7 kunlik TOP'),BotCommand('money','Pul yuborish — reply'),BotCommand('give','Olmos yuborish — reply'),BotCommand('kurs','Olmos kursi'),BotCommand('help','Yordam')]
     await app.bot.set_my_commands(general,scope=BotCommandScopeAllPrivateChats())
     await app.bot.set_my_commands(group,scope=BotCommandScopeAllGroupChats())
     if OWNER_ID:
@@ -581,7 +772,7 @@ def main():
     app=Application.builder().token(TOKEN).post_init(post_init).build()
     handlers=[
         ('start',start),('help',help_cmd),('profile',profile),('roles',roles_cmd),('money',money_gift),('give',give_diamonds),
-        ('top',top_cmd),('top1',top_cmd),('top7',top_cmd),('para',para_cmd),('game',newgame),('newgame',newgame),
+        ('top',top_cmd),('top1',top_cmd),('top7',top_cmd),('para',para_cmd),('mypara',mypara_cmd),('game',newgame),('newgame',newgame),
         ('players',players_cmd),('startgame',startgame),('role',role_cmd),('night',night_cmd),
         ('kill',kill_cmd),('heal',heal_cmd),('check',check_cmd),('endnight',endnight),('vote',vote_cmd),('leave',leave_cmd),
         ('admin',admin_cmd),('adddiamond',adddiamond),('adddiamonds',adddiamond),('removediamond',removediamond),
