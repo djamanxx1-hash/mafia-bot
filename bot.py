@@ -1,4 +1,4 @@
-import os
+Aimport os
 import random
 import sqlite3
 import logging
@@ -133,24 +133,23 @@ silenced_users = set()
 pending_inputs = {}
 change_locks = set()
 
+# Yangi rol to‘plami: 35 ta noyob rol. Eski rol nomlari olib tashlandi.
 ROLES = [
-    ("Mafia", "🔪"), ("Mafia", "🔪"), ("Mafia", "🔪"),
-    ("Don", "👑"), ("Godfather", "🕴️"),
-    ("Komissar", "🔍"), ("Sherif", "⭐"), ("Doktor", "💉"),
-    ("Bodyguard", "🛡️"), ("Advokat", "⚖️"), ("Detektiv", "🕵️"),
-    ("Snayper", "🎯"), ("Jurnalist", "📰"), ("Haker", "💻"),
-    ("Psixolog", "🧠"), ("Sevishgan", "❤️"), ("Manyak", "☠️"),
-    ("O'g'ri", "🥷"), ("Qasoskor", "⚔️"),
-] + [("Fuqaro", "👤")] * 12
-
-ROLE_POINTS = {
-    "Mafia": 100, "Don": 120, "Godfather": 120,
-    "Komissar": 100, "Sherif": 100, "Doktor": 100,
-    "Bodyguard": 100, "Advokat": 100, "Detektiv": 100,
-    "Snayper": 120, "Jurnalist": 90, "Haker": 100,
-    "Psixolog": 90, "Sevishgan": 80, "Manyak": 150,
-    "O'g'ri": 100, "Qasoskor": 130, "Fuqaro": 50,
-}
+    ("Tinch aholi", "👨🏼"), ("Komissar Kattani", "🕵🏼"), ("Serjant", "👮🏼"),
+    ("Doktor", "👨🏼‍⚕️"), ("Tabib", "👨🏻‍⚕️"), ("Daydi", "🧙🏼"),
+    ("Kezuvchi", "💃"), ("Afsungar", "💣"), ("Voris", "🧑🏻‍💼"),
+    ("Janob", "🎖"), ("Ovchi", "🏹"), ("Donishmand", "👨🏼‍🏫"),
+    ("Omadli", "🍀"), ("Suidsid", "🤦🏼"), ("Sotqin", "🤓"),
+    ("Mafia", "🤵🏼"), ("Don", "🤵🏻"), ("Jurnalist", "👩🏼‍💻"),
+    ("Yollanma qotil", "🕴"), ("Savdogar", "🧔🏻‍♂️"), ("Zaharchi", "🧑‍🎤"),
+    ("Advokat", "👨🏼‍💼"), ("Qotil", "🔪"), ("G‘azabkor", "🧟"),
+    ("Sehrgar", "🧙"), ("Vampir", "🧛🏻"), ("Haqiqiy Vampir", "🧛🏻‍♂️"),
+    ("Qaroqchi", "🦹🏻‍♂️"), ("Konchi", "👷🏻‍♂️"), ("Banker", "👨🏻‍💻"),
+    ("Bo‘ri", "🐺"), ("Gibrid", "🧛🏿‍♂️"), ("Reviver", "🧜🏻‍♂️"),
+    ("Aferist", "🤹🏻"), ("Vampir ovchisi", "🧛‍♀️"),
+]
+ROLE_POINTS = {role: 100 for role, _ in ROLES}
+ROLE_POINTS.update({"Don": 120, "Qotil": 150, "Haqiqiy Vampir": 150, "Gibrid": 150, "Vampir ovchisi": 130})
 
 PROTECTIONS = {
     "universal": ("🛡️ Himoya", "100 pul", "Bir hujumdan himoya qiladi."),
@@ -408,7 +407,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(
         "📚 <b>BUYRUQLAR</b>\n\n"
         "/start — botni boshlash\n/profile — profil\n/roles — barcha o‘yin rollari\n/help — yordam\n"
-        "/give 5 — reply orqali olmos yuborish\n/send 100 — guruhda olmos tarqatish\n"
+        "/give 5 — reply orqali olmos yuborish\n/money 5000 — reply orqali pul yuborish\n/send 100 — admin olmos tarqatadi\n"
         "/change 100 — olmosli tanlov\n/newgame — yangi Mafia o‘yini\n/join — o‘yinga qo‘shilish\n"
         "/players — o‘yinchilar\n/startgame — o‘yinni boshlash\n/role — faol o‘yindagi o‘z rolingiz\n"
         "/night — tungi vazifa\n/vote 2 — ovoz berish\n/endnight — tunni tugatish\n\n"
@@ -712,25 +711,42 @@ async def roles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text("\n".join(lines), parse_mode="HTML")
 
 
-ROLE_HELP={
-    "Mafia":"🔪 Mafia nishonni tanlaydi: /kill RAQAM",
-    "Don":"👑 Don Mafia hujumini boshqaradi: /kill RAQAM",
-    "Godfather":"🕴️ Godfather hujumda ishtirok etadi: /kill RAQAM",
-    "Komissar":"🔍 Tekshiruv: /check RAQAM",
-    "Sherif":"⭐ Tekshiruv: /check RAQAM",
-    "Doktor":"💉 Davolash: /heal RAQAM",
-    "Bodyguard":"🛡️ Himoyalash: /guard RAQAM",
-    "Advokat":"⚖️ Himoya: /guard RAQAM",
-    "Detektiv":"🕵️ Tekshiruv: /check RAQAM",
-    "Snayper":"🎯 O‘q: /shoot RAQAM",
-    "Jurnalist":"📰 Tekshiruv: /check RAQAM",
-    "Haker":"💻 Tekshiruv: /check RAQAM",
-    "Psixolog":"🧠 Ovoz bloklash: /silence RAQAM",
-    "Sevishgan":"❤️ Juftini tanlash uchun admin qoidalariga amal qiladi.",
-    "Manyak":"☠️ Mustaqil hujum: /kill RAQAM",
-    "O'g'ri":"🥷 Maxsus imkoniyat keyingi bosqichlarda qo‘llanadi.",
-    "Qasoskor":"⚔️ Qarshi hujum mexanikasi faol.",
-    "Fuqaro":"👤 Muhokama va ovoz berishda ishtirok eting.",
+ROLE_HELP = {
+    "Tinch aholi": "Kunduzgi muhokama va ovoz berishda qatnashing.",
+    "Komissar Kattani": "Tunda mafiyani aniqlash va yo‘q qilish.",
+    "Serjant": "Komissar Kattani yordamchisi; u halok bo‘lsa o‘rnini egallaydi.",
+    "Doktor": "Tunda bir o‘yinchini qutqarishga harakat qiladi.",
+    "Tabib": "Zaharlangan o‘yinchini davolaydi.",
+    "Daydi": "Tunda birovning uyiga borib, qotillikka guvoh bo‘lishi mumkin.",
+    "Kezuvchi": "Mehmonga borgan o‘yinchini bir kechaga uxlatadi.",
+    "Afsungar": "O‘ldirilsa, uni o‘ldirgan ham halok bo‘ladi.",
+    "Voris": "Uni kim o‘ldirganiga qarab rolini o‘zgartiradi.",
+    "Janob": "Kunduzgi ovozi ikkita hisoblanadi.",
+    "Ovchi": "Tunda o‘yinchilarni tekshirishi yoki nishonga olishi mumkin.",
+    "Donishmand": "Tungi ayrim maxfiy suhbatlarni eshitadi.",
+    "Omadli": "Tungi hujumdan 50% ehtimol bilan omon qoladi.",
+    "Suidsid": "Mafia uni o‘ldirsa, mafiani ham o‘zi bilan olib ketadi.",
+    "Sotqin": "Mafia g‘alaba qilganida tirik bo‘lsa, u ham yutadi.",
+    "Mafia": "Mafia jamoasi bilan tinch aholini yo‘q qiladi.",
+    "Don": "Mafianing tungi nishonini belgilaydi.",
+    "Jurnalist": "Tunda uyiga kelgan o‘yinchilarni kuzatadi.",
+    "Yollanma qotil": "Mafia uchun alohida hujum qiladi.",
+    "Savdogar": "Qora bozor orqali xavfli qutilarni taklif qiladi.",
+    "Zaharchi": "Tunda o‘yinchini zaharlaydi; Tabib davolashi mumkin.",
+    "Advokat": "Mafia sherigini tekshiruvdan yashiradi.",
+    "Qotil": "Yakka o‘ynaydi va boshqalarning yo‘q qilinishini maqsad qiladi.",
+    "G‘azabkor": "Uch qurbon tanlab, keyin o‘zini o‘ldirsa g‘alaba qiladi.",
+    "Sehrgar": "Maxsus hujumlardan omon qolishi va la’nat qo‘yishi mumkin.",
+    "Vampir": "Tunda nishonga hujum qiladi; ayrim rollar qarshi tura oladi.",
+    "Haqiqiy Vampir": "Faqat kunduzgi osilish orqali yo‘q qilinadi.",
+    "Qaroqchi": "Tunda pul, buyum yoki ovoz huquqini o‘g‘irlashi mumkin.",
+    "Konchi": "Tunda dollar yoki olmos topadi; tirik qolsa yutadi.",
+    "Banker": "Konchi yoki Savdogar daromadidan 10% oladi.",
+    "Bo‘ri": "Tunda bir o‘yinchiga hujum qiladi; vampirlarga qarshi xavfi bor.",
+    "Gibrid": "Maxsus kuchli rol; har kecha bir o‘yinchiga hujum qiladi.",
+    "Reviver": "O‘yin davomida bir marta o‘lgan o‘yinchini tiriltiradi.",
+    "Aferist": "Tunda tanlangan o‘yinchining harakatini o‘g‘irlaydi.",
+    "Vampir ovchisi": "Vampirlarni aniqlash ва уларга қарши курашиш учун махсус rol.",
 }
 
 
@@ -1027,12 +1043,23 @@ async def kurs_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def para_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.effective_message
-    if not msg.reply_to_message or not msg.reply_to_message.from_user:
-        return await msg.reply_text("💞 Juftlik topish uchun boshqa o‘yinchining xabariga reply qilib /para yozing.")
-    a, b = update.effective_user, msg.reply_to_message.from_user
-    if a.id == b.id:
-        return await msg.reply_text("O‘zingiz bilan juftlik bo‘la olmaysiz 🙂")
-    await msg.reply_text(f"💞 <b>Haqiqiy juftlik</b> 💞\n\n❤️ {a.first_name} + {b.first_name} ❤️", parse_mode="HTML")
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        return await msg.reply_text("💞 /para buyrug‘ini guruhda ishlating.")
+    con = db()
+    rows = con.execute(
+        "SELECT p.user_id, p.name FROM players p JOIN group_members g ON p.user_id=g.user_id "
+        "WHERE g.chat_id=? AND p.banned=0", (chat.id,)
+    ).fetchall()
+    con.close()
+    candidates = [(int(r["user_id"]), r["name"] or "Noma’lum") for r in rows]
+    if len(candidates) < 2:
+        return await msg.reply_text("💞 Juftlik tanlash uchun guruhda kamida 2 o‘yinchi /buyruqlar orqali ro‘yxatga tushgan bo‘lishi kerak.")
+    first, second = random.sample(candidates, 2)
+    await msg.reply_text(
+        f"💞 <b>HAQIQIY JUFTLIK</b> 💞\n\n<b>{first[1].upper()} ❤️ {second[1].upper()}</b>",
+        parse_mode="HTML"
+    )
 
 
 async def track_group_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1040,46 +1067,22 @@ async def track_group_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 
 
 def select_roles(n):
-    """O‘yinchi soniga qarab muvozanatli rol to‘plami."""
+    """Ishtirokchilar soniga qarab yangi rollarni takrorlamasdan tanlaydi."""
+    pool = list(ROLES)
+    mafia_roles = [("Don", "🤵🏻"), ("Mafia", "🤵🏼"), ("Yollanma qotil", "🕴"), ("Zaharchi", "🧑‍🎤"), ("Advokat", "👨🏼‍💼"), ("Jurnalist", "👩🏼‍💻"), ("Savdogar", "🧔🏻‍♂️")]
+    selected = []
     mafia_count = max(1, n // 4)
-    roles = []
     if n >= 8:
-        roles.append(("Don", "👑")); mafia_count = max(1, mafia_count - 1)
-    roles += [("Mafia", "🔪")] * mafia_count
-    special = [
-        ("Doktor", "💉"), ("Komissar", "🔍"), ("Bodyguard", "🛡️"),
-        ("Detektiv", "🕵️"), ("Sherif", "⭐"), ("Advokat", "⚖️"),
-        ("Snayper", "🎯"), ("Jurnalist", "📰"), ("Haker", "💻"),
-        ("Psixolog", "🧠"), ("Sevishgan", "❤️"), ("O‘g‘ri", "🥷"),
-        ("Qasoskor", "⚔️"), ("Manyak", "☠️")
-    ]
-    if n >= 6:
-        roles.append(special.pop(0))
-    if n >= 7:
-        roles.append(special.pop(0))
-    if n >= 8:
-        roles.append(special.pop(0))
-    if n >= 10:
-        roles.append(special.pop(0))
-    if n >= 12:
-        roles.append(special.pop(0))
-    if n >= 14:
-        roles.append(special.pop(0))
-    if n >= 16:
-        roles.append(special.pop(0))
-    if n >= 18:
-        roles.append(special.pop(0))
-    if n >= 20:
-        roles.append(special.pop(0))
-    if n >= 22:
-        roles.append(special.pop(0))
-    if n >= 25:
-        roles.append(special.pop(0))
-    if n >= 28:
-        roles.append(special.pop(0))
-    while len(roles) < n:
-        roles.append(("Fuqaro", "👤"))
-    return roles[:n]
+        selected.append(("Don", "🤵🏻"))
+    for role in mafia_roles:
+        if len([x for x in selected if x in mafia_roles]) >= mafia_count:
+            break
+        if role not in selected:
+            selected.append(role)
+    remaining = [r for r in pool if r not in selected]
+    random.shuffle(remaining)
+    selected.extend(remaining[:max(0, n-len(selected))])
+    return selected[:n]
 
 
 def main():
