@@ -135,7 +135,6 @@ def allowed(update):
     if not u: return False
     p = get_player(u.id,u)
     if p['banned']:
-        if update.effective_message: update.effective_message.reply_text('🚫 Siz botdan foydalanish huquqidan mahrum qilingansiz.')
         return False
     return True
 
@@ -155,11 +154,23 @@ def profile_keyboard():
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
-    await update.effective_message.reply_text('🎭 <b>MAFIA BOT</b>\n\nProfilingizni ko‘rish: /profile\nGuruhda yangi o‘yin: /newgame\nRollar: /roles\nYordam: /help', parse_mode='HTML')
+    welcome = (
+        '👋 <b>𝐒𝐚𝐥𝐨𝐦! 𝐌𝐚𝐟𝐢𝐲𝐚 𝐨𝐥𝐚𝐦𝐢𝐠𝐚 𝐇𝐮𝐬𝐡 𝐤𝐞𝐥𝐢𝐛𝐬𝐚𝐧!</b>\n\n'
+        '𝐁𝐮 𝐨𝐝𝐝𝐢𝐲 𝐨ʻ𝐲𝐢𝐧 𝐞𝐦𝐚𝐬 — 𝐬𝐢𝐫𝐥𝐢 𝐣𝐚𝐦𝐨𝐚, 𝐢𝐬𝐡𝐨𝐧𝐜𝐡 𝐯𝐚 𝐡𝐚𝐦𝐦𝐚𝐧𝐢 𝐬𝐢𝐧𝐨𝐯𝐝𝐚𝐧 𝐨ʻ𝐭𝐤𝐚𝐳𝐚𝐝𝐢𝐠𝐚𝐧 𝐨ʻ𝐲𝐢𝐧! 🕵️‍♂️\n'
+        '𝐎ʻ𝐲𝐢𝐧𝐠𝐚 𝐤𝐢𝐫, 𝐫𝐨𝐥𝐢𝐧𝐠𝐧𝐢 𝐨𝐥, 𝐨ʻ𝐳𝐢𝐧𝐠𝐧𝐢 𝐤𝐨ʻ𝐫𝐬𝐚𝐭! 🎯\n\n'
+        '🎭 <b>𝐒𝐞𝐧𝐢𝐧𝐠 𝐫𝐨𝐥𝐢𝐧𝐠 𝐤𝐮𝐭𝐦𝐨𝐪𝐝𝐚...</b>\n'
+        '🔪 Mafia orasida yashirinib qolasanmi yoki 🕵️‍♂️ shaharni qutqarasanmi? Buni faqat o‘yin ko‘rsatadi!\n\n'
+        '🤝 Do‘stlaringni guruhga yig‘, yangi o‘yin och va kimning kimligini topishga harakat qil.\n'
+        '⚡ Har bir ovoz muhim. Har bir tun xavfli. Ishonch esa eng katta qurol!\n\n'
+        '🎮 <b>BOSHLASH UCHUN:</b> botni guruhga qo‘shing va guruhda /game yuboring.\n'
+        '👤 Profil: /profile  |  🎭 Rollar: /roles  |  📚 Yordam: /help\n\n'
+        '🩸 <i>Shubha qil. Kuzat. Ovoz ber. G‘alaba qozon!</i>'
+    )
+    await update.effective_message.reply_text(welcome, parse_mode='HTML')
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
-    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /newgame /game /join /players /startgame /leave /role /night /vote /top /top1 /top7 /para\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
+    await update.effective_message.reply_text('📚 <b>BUYRUQLAR</b>\n\nShaxsiy: /start /profile /roles /help\nGuruh: /newgame /game /players /startgame /leave /role /night /vote /top /top1 /top7 /para\nPul yuborish: javob qilib /money 5000\nOlmos yuborish: javob qilib /give 2', parse_mode='HTML')
 
 async def profile(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -186,9 +197,37 @@ async def roles_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i in range(0, len(text), 3500): await update.effective_message.reply_text(text[i:i+3500], parse_mode='HTML')
 
 async def callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    q = update.callback_query; await q.answer()
+    q = update.callback_query
+    if not q.data.startswith('join_game:'):
+        await q.answer()
     if not allowed(update): return
     uid = q.from_user.id
+    if q.data.startswith('join_game:'):
+        try: chat_id = int(q.data.split(':', 1)[1])
+        except (ValueError, IndexError): return await q.answer('Tugma noto‘g‘ri.', show_alert=True)
+        if q.message is None or q.message.chat.id != chat_id:
+            return await q.answer('Bu tugma boshqa guruh uchun.', show_alert=True)
+        g = game_for(chat_id)
+        if g.get('lobby_message_id') != q.message.message_id:
+            return await q.answer('Bu o‘yin e’loni eskirgan. Yangi o‘yin oching.', show_alert=True)
+        if g['started'] or g.get('phase') != 'lobby':
+            return await q.answer('O‘yin boshlangan, qo‘shilish yopiq.', show_alert=True)
+        u = q.from_user
+        if u.id in g['players']:
+            return await q.answer('Siz allaqachon ro‘yxatdasiz.', show_alert=True)
+        if len(g['players']) >= MAX_PLAYERS:
+            return await q.answer('O‘yinchilar soni 30 taga yetdi.', show_alert=True)
+        get_player(u.id, u)
+        g['players'][u.id] = {'id': u.id, 'name': u.full_name, 'alive': True}
+        with db() as con:
+            con.execute('INSERT OR IGNORE INTO group_members(chat_id,user_id) VALUES(?,?)', (chat_id, u.id))
+        count = len(g['players'])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'➕ Qo‘shilish ({count}/{MAX_PLAYERS})', callback_data=f'join_game:{chat_id}')]])
+        try:
+            await q.edit_message_text(f'🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n👥 O‘yinchilar: {count}/{MAX_PLAYERS}\n🔹 Kamida 4 kishi kerak.\n\nO‘yinga kirish uchun quyidagi tugmani bosing.', parse_mode='HTML', reply_markup=keyboard)
+        except Exception:
+            pass
+        return await q.answer('✅ O‘yinga qo‘shildingiz!')
     if q.data == 'back_profile':
         p=get_player(uid,q.from_user); return await q.edit_message_text('👤 <b>PROFIL</b>\n\n'+money_text(p),parse_mode='HTML',reply_markup=profile_keyboard())
     if q.data == 'shop':
@@ -281,21 +320,12 @@ async def newgame(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if chat.type not in ('group','supergroup'): return await update.effective_message.reply_text('Yangi o‘yinni guruhda oching.')
     g=game_for(chat.id)
     if g['started']: return await update.effective_message.reply_text('❌ Hozir o‘yin davom etmoqda.')
-    g.update(players={},started=False,phase='lobby',votes={},actions={},silenced=set())
-    await update.effective_message.reply_text('🎭 <b>YANGI MAFIYA O‘YINI</b>\n\nQo‘shilish uchun /join bosing.\n👥 Minimal: 4 | Maksimal: 30',parse_mode='HTML')
-
-async def join(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not allowed(update): return
-    chat=update.effective_chat
-    if chat.type not in ('group','supergroup'): return await update.effective_message.reply_text('O‘yinga guruhda qo‘shiling.')
-    g=game_for(chat.id); u=update.effective_user
-    if g['started']: return await update.effective_message.reply_text('O‘yin allaqachon boshlangan.')
-    if len(g['players'])>=MAX_PLAYERS: return await update.effective_message.reply_text('O‘yinchilar soni 30 taga yetdi.')
-    if u.id in g['players']: return await update.effective_message.reply_text('Siz allaqachon ro‘yxatdasiz.')
-    get_player(u.id,u)
-    g['players'][u.id]={'id':u.id,'name':u.full_name,'alive':True}
-    with db() as con: con.execute('INSERT OR IGNORE INTO group_members(chat_id,user_id) VALUES(?,?)',(chat.id,u.id))
-    await update.effective_message.reply_text(f'✅ {escape(u.full_name)} o‘yinga qo‘shildi. ({len(g["players"])}/{MAX_PLAYERS})',parse_mode='HTML')
+    g.update(players={},started=False,phase='lobby',votes={},actions={},silenced=set(),lobby_message_id=None)
+    keyboard = InlineKeyboardMarkup([[InlineKeyboardButton(f'➕ Qo‘shilish (0/{MAX_PLAYERS})', callback_data=f'join_game:{chat.id}')]])
+    sent = await update.effective_message.reply_text(
+        f'🎭 <b>YANGI MAFIYA O‘YINI</b>\n\n👥 O‘yinchilar: 0/{MAX_PLAYERS}\n🔹 Kamida {MIN_PLAYERS} kishi kerak.\n\nO‘yinga kirish uchun quyidagi tugmani bosing.',
+        parse_mode='HTML', reply_markup=keyboard)
+    g['lobby_message_id'] = sent.message_id
 
 async def players_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not allowed(update): return
@@ -431,8 +461,10 @@ def admin_target(update):
     return None
 
 async def admin_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not allowed(update): return
-    if not is_admin(update.effective_user.id): return await update.effective_message.reply_text('🔒 Bu buyruq faqat adminlar uchun.')
+    if not is_owner(update.effective_user.id):
+        return await update.effective_message.reply_text('🔒 /admin buyrug‘i faqat bot egasiga shaxsiy chatda ochiq.')
+    if update.effective_chat.type != 'private':
+        return await update.effective_message.reply_text('🔒 Admin panelni bot bilan shaxsiy chatda oching.')
     text=('👑 <b>ADMIN PANEL</b>\n\n'
           'Reply orqali: /profile, /bankrot1, /bankrot2, /ban, /unban\n'
           'ID bilan: /profile ID\n'
@@ -532,8 +564,10 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     logger.exception('Handler xatosi:', exc_info=context.error)
 
 async def post_init(app: Application):
+    # Oddiy foydalanuvchi shaxsiy menyusi — admin buyruqlari ko‘rinmaydi.
     general=[BotCommand('start','Botni boshlash'),BotCommand('profile','Profil'),BotCommand('roles','O‘yin rollari'),BotCommand('help','Yordam')]
-    group=[BotCommand('game','Yangi o‘yin'),BotCommand('newgame','Yangi o‘yin ochish'),BotCommand('join','O‘yinga qo‘shilish'),BotCommand('players','O‘yinchilar'),BotCommand('startgame','O‘yinni boshlash'),BotCommand('leave','O‘yindan chiqish'),BotCommand('role','Mening rolim'),BotCommand('night','Tungi vazifa'),BotCommand('vote','Ovoz berish'),BotCommand('endnight','Tunni tugatish'),BotCommand('top','TOP'),BotCommand('top1','Bugungi TOP'),BotCommand('top7','7 kunlik TOP'),BotCommand('para','Juftlik'),BotCommand('kurs','Olmos kursi'),BotCommand('help','Yordam')]
+    # Guruh menyusida /join yo‘q: o‘yinga inline tugma orqali qo‘shilinadi.
+    group=[BotCommand('start','Botni boshlash'),BotCommand('game','Yangi o‘yin'),BotCommand('newgame','Yangi o‘yin ochish'),BotCommand('players','O‘yinchilar'),BotCommand('startgame','O‘yinni boshlash'),BotCommand('leave','O‘yindan chiqish'),BotCommand('profile','Profil'),BotCommand('roles','O‘yin rollari'),BotCommand('role','Mening rolim'),BotCommand('night','Tungi vazifa'),BotCommand('kill','Nishonga hujum'),BotCommand('heal','Nishonni davolash'),BotCommand('check','Nishonni tekshirish'),BotCommand('vote','Ovoz berish'),BotCommand('endnight','Tunni tugatish'),BotCommand('top','TOP'),BotCommand('top1','Bugungi TOP'),BotCommand('top7','7 kunlik TOP'),BotCommand('para','Juftlik'),BotCommand('money','Pul yuborish — reply'),BotCommand('give','Olmos yuborish — reply'),BotCommand('kurs','Olmos kursi'),BotCommand('help','Yordam')]
     await app.bot.set_my_commands(general,scope=BotCommandScopeAllPrivateChats())
     await app.bot.set_my_commands(group,scope=BotCommandScopeAllGroupChats())
     if OWNER_ID:
@@ -548,7 +582,7 @@ def main():
     handlers=[
         ('start',start),('help',help_cmd),('profile',profile),('roles',roles_cmd),('money',money_gift),('give',give_diamonds),
         ('top',top_cmd),('top1',top_cmd),('top7',top_cmd),('para',para_cmd),('game',newgame),('newgame',newgame),
-        ('join',join),('players',players_cmd),('startgame',startgame),('role',role_cmd),('night',night_cmd),
+        ('players',players_cmd),('startgame',startgame),('role',role_cmd),('night',night_cmd),
         ('kill',kill_cmd),('heal',heal_cmd),('check',check_cmd),('endnight',endnight),('vote',vote_cmd),('leave',leave_cmd),
         ('admin',admin_cmd),('adddiamond',adddiamond),('adddiamonds',adddiamond),('removediamond',removediamond),
         ('addmoney',addmoney),('addbalance',addmoney),('removemoney',removemoney),('bankrot1',bankrot),('bankrot2',bankrot),
